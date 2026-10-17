@@ -1,5 +1,6 @@
 """Tests for the TLUSTY backend: set construction, release inference,
-kind-17 handling, and bilinear interpolation on the synthetic fixtures.
+whole-model kind handling (7 + 17 together), vispec tar reading, and
+bilinear interpolation on the synthetic fixtures.
 
 The interpolation expectations are hand-computed from the fixture law
 H(Teff, log g, lam) = (Teff/1e4) * log g * lam/1000 (the same law the
@@ -22,7 +23,6 @@ from stellarlib.exceptions import (
 from stellarlib.facade import TlustySpectra
 from stellarlib.grid import open_grid
 from stellarlib.models.tlusty.backend import read_tlusty
-from stellarlib.warnings import IncompleteMetadataWarning
 
 DATA = Path(__file__).parent.parent / "data" / "tlusty"
 WAVE = np.array([5000.0, 5001.0, 5002.0])
@@ -39,6 +39,7 @@ BSTAR_NAMES = [
     "BG16000g175v20.vis.7.gz",
     "BG16000g200v20.vis.7.gz",
 ]
+TAR = DATA / "Gvispec_fixture.tar"
 
 
 def _ostar_grid() -> TlustySpectra:
@@ -83,19 +84,82 @@ class TestSetConstruction:
         with pytest.raises(MetadataConflictError, match="composition"):
             read_tlusty(files)
 
-    def test_kind17_skipped_with_warning_and_record(self):
-        with pytest.warns(IncompleteMetadataWarning, match="kind-17"):
-            set_ = read_tlusty(
-                [DATA / n for n in OSTAR_NAMES] + [DATA / "G27500g325v10.vis.17.gz"]
-            )
+    def test_kind17_held_with_record_no_warning(self, recwarn):
+        # kind 7 + kind 17 are one model's two data: the continuum rides
+        # along in every set, is recorded, and warns about nothing
+        set_ = read_tlusty(
+            [DATA / n for n in OSTAR_NAMES]
+            + [DATA / n.replace(".vis.7.", ".vis.17.") for n in OSTAR_NAMES]
+        )
         assert len(set_) == 4
-        assert set_.notes["skipped_kind17"] == ["G27500g325v10.vis.17.gz"]
+        assert set_.notes["kind17_files"] == [
+            n.replace(".vis.7.", ".vis.17.") for n in OSTAR_NAMES
+        ]
+        for node in set_:
+            assert node.facts["continuum_member"].endswith(".vis.17.gz")
+        assert not [w for w in recwarn.list if "kind-17" in str(w.message)]
 
     def test_only_kind17_refused(self):
         from stellarlib.exceptions import UnrecognizedFormatError
 
         with pytest.raises(UnrecognizedFormatError, match="kind-17 continuum"):
             read_tlusty([DATA / "G27500g325v10.vis.17.gz"])
+
+
+class TestVispecTar:
+    def test_tar_is_one_whole_product(self):
+        set_ = read_tlusty(TAR)
+        assert len(set_) == 4
+        assert set_.identity.release == "OSTAR2002"
+        assert set_.identity.physics_configuration == "composition G"
+        assert set_.notes["tar"] == "Gvispec_fixture.tar"
+        assert set_.notes["members"] == {"kind7": 4, "kind17": 4}
+        for node in set_:
+            assert node.facts["member"].endswith(".vis.7.gz")
+            assert node.facts["continuum_member"] == (
+                node.facts["member"].replace(".vis.7.", ".vis.17.")
+            )
+
+    def test_tar_loader_streams_members(self):
+        grid = TlustySpectra([read_tlusty(TAR)])
+        spectrum = grid.spectrum(teff=31250.0, log_surface_gravity=3.125)
+        np.testing.assert_allclose(
+            spectrum.native.flux, 3.125 * 3.125 * WAVE / 1000.0
+        )
+        assert spectrum.unified["wavelength"][0] == pytest.approx(5000.0)
+
+    def test_tar_continuum_readable_from_member_name(self):
+        # the recorded sibling is addressable: one member read, own grid
+        import tarfile
+
+        from stellarlib.models.tlusty.reader import read_vis_payload
+
+        set_ = read_tlusty(TAR)
+        node = next(iter(set_))
+        with tarfile.open(TAR) as tf:
+            payload = tf.extractfile(node.facts["continuum_member"]).read()
+        continuum = read_vis_payload(payload, node.facts["continuum_member"])
+        assert continuum.wavelength[0] == pytest.approx(5000.0)
+        assert continuum.flux.size == 2  # the coarser kind-17 grid
+
+    def test_open_grid_sniffs_tar(self):
+        grid = open_grid(TAR, model="tlusty/OSTAR2002")
+        assert len(grid) == 4
+
+    def test_tar_plus_loose_members_refused(self):
+        with pytest.raises(ValueError, match="one vispec tar"):
+            read_tlusty([TAR, DATA / OSTAR_NAMES[0]])
+
+    def test_kind17_only_tar_refused(self, tmp_path):
+        import tarfile
+
+        stray = tmp_path / "only17.tar"
+        with tarfile.open(stray, "w") as tf:
+            tf.add(DATA / "G27500g325v10.vis.17.gz", arcname="G27500g325v10.vis.17.gz")
+        from stellarlib.exceptions import UnrecognizedFormatError
+
+        with pytest.raises(UnrecognizedFormatError, match="kind-7"):
+            read_tlusty(stray)
 
 
 class TestOpenGrid:

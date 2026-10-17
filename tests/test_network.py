@@ -34,6 +34,17 @@ class TestBoszCatalog:
     def test_release_tree_live(self):
         assert _head_ok("https://archive.stsci.edu/hlsps/bosz/bosz2024/")
 
+    def test_bulkdl_scripts_live(self):
+        # the official bulk packages: one script per upstream directory
+        assert _head_ok(
+            "https://archive.stsci.edu/hlsps/bosz/bosz2024/download_scripts/"
+            "hlsp_bosz_bosz2024_sim_r500_m+0.00_v1_bulkdl.sh"
+        )
+        assert _head_ok(
+            "https://archive.stsci.edu/hlsps/bosz/bosz2024/download_scripts/"
+            "hlsp_bosz_bosz2024_sim_rorig_m-2.50_v1_bulkdl.sh"
+        )
+
     def test_verified_sample_files_unchanged(self):
         cat = catalog("bosz")
         for name, size in cat["verified"]["sample_files_verified"].items():
@@ -61,5 +72,32 @@ class TestBoszCatalog:
 
 
 class TestTlustyCatalog:
-    def test_distribution_host_live(self):
-        assert _head_ok("https://tlusty.oca.eu/")
+    # the vispec tar inventory, live-verified 2026-10-18 (catalog
+    # tar_inventory): the archives below were fully downloaded and their
+    # exact byte sizes recorded; the rest are HEAD-checked for liveness
+    _DATABASE = "https://tlusty.oca.eu/tlusty/Tlusty2002/database"
+
+    def test_fully_verified_archives_unchanged(self):
+        for archive, size in (
+            ("Gvispec.tar", 89_733_120),
+            ("BGvispec_v2.tar", 359_065_600),
+        ):
+            response = requests.head(
+                f"{self._DATABASE}/{archive}",
+                headers=HEADERS,
+                timeout=TIMEOUT,
+                allow_redirects=True,
+            )
+            assert response.status_code == 200, archive
+            reported = response.headers.get("Content-Length")
+            if reported is not None:
+                assert int(reported) == size, (
+                    f"{archive}: upstream size {reported} != recorded {size}; "
+                    "the archive may have been replaced — re-verify the catalog"
+                )
+
+    def test_tar_inventory_live(self):
+        cat = catalog("tlusty")
+        for release in ("ostar2002", "bstar2006"):
+            for entry in cat["verified"]["tar_inventory"][release]["tars"].values():
+                assert _head_ok(f"{self._DATABASE}/{entry['archive']}")

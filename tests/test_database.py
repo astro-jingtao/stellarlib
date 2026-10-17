@@ -482,6 +482,59 @@ class TestRegisterLocalProduct:
         grid = db.grid("tlusty/OSTAR2002", label="ostar_g")
         assert len(grid) == 4
 
+    def test_tlusty_registration_accepts_whole_tar(self, tmp_path):
+        record = register_local_product(
+            tmp_path,
+            "tlusty",
+            "g_tar",
+            [TLUSTY_DATA / "Gvispec_fixture.tar"],
+            note="hand-held vispec tar",
+        )
+        assert record.manifest["release"] == "OSTAR2002"
+        assert record.manifest["family_section"]["composition"] == "G"
+        db = open_database(tmp_path)
+        grid = db.grid("tlusty/OSTAR2002", label="g_tar")
+        assert len(grid) == 4
+
+
+class TestTlustyBlueprint:
+    def test_full_tar_inventory_declared(self):
+        from stellarlib.models.tlusty.design import TLUSTY_ADAPTER
+
+        designs = list(TLUSTY_ADAPTER.designs({"family": "tlusty"}))
+        assert len(designs) == 20  # OSTAR 10 compositions + BSTAR 5 x 2 vmicro
+        by_name = {d.directory_name: d for d in designs}
+        assert {d.kind for d in designs} == {"official_mirror"}
+        (part,) = by_name["tlusty/OSTAR2002/G"].parts
+        assert part.name == "Gvispec.tar"
+        assert part.role == "archive"
+        assert part.url == (
+            "https://tlusty.oca.eu/tlusty/Tlusty2002/database/Gvispec.tar"
+        )
+        assert "tlusty/BSTAR2006/BG_v2" in by_name
+        assert "tlusty/BSTAR2006/BT_v10" in by_name
+
+    def test_build_fetches_whole_tars(self, tmp_path):
+        session = FakeSession(
+            {
+                "https://tlusty.oca.eu/tlusty/Tlusty2002/database/Gvispec.tar": (
+                    TLUSTY_DATA / "Gvispec_fixture.tar"
+                ).read_bytes(),
+            }
+        )
+        db = build_database(
+            tmp_path, declarations=[{"family": "tlusty"}], session=session
+        )
+        manifest = read_manifest(tmp_path / "tlusty" / "OSTAR2002" / "G")
+        assert list(manifest["parts"]) == ["Gvispec.tar"]
+        assert (
+            manifest["parts"]["Gvispec.tar"]["sha256"]
+            == _sha(TLUSTY_DATA / "Gvispec_fixture.tar")
+        )
+        grid = db.grid("tlusty/OSTAR2002", label="G")
+        assert len(grid) == 4
+        assert grid.sets[0].notes["members"] == {"kind7": 4, "kind17": 4}
+
 
 class TestDatabaseOpen:
     def test_requires_directory(self, tmp_path):

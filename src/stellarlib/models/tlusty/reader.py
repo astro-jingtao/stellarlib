@@ -68,6 +68,29 @@ def read_vis(path: str | os.PathLike) -> NativeSpectrum:
     )
 
 
+def read_vis_payload(payload: bytes, name: str) -> NativeSpectrum:
+    """Read one vis spectrum from in-memory bytes (a tar member).
+
+    ``name`` is the member's own filename (``*.vis.7.gz`` or
+    ``*.vis.17.gz`` inside a vispec archive); the payload is the gzip
+    member exactly as published.
+    """
+    import io
+
+    raw = gzip.decompress(payload) if name.endswith(".gz") else payload
+    data = np.loadtxt(io.BytesIO(raw), ndmin=2)
+    if data.ndim != 2 or data.shape[1] != 2:
+        raise ValueError(f"{name}: expected two columns (wave, H)")
+    metadata = parse_filename(name) if FILENAME_RE.match(name) else {}
+    return NativeSpectrum(
+        wavelength=data[:, 0],
+        flux=data[:, 1],
+        continuum=None,
+        metadata=metadata,
+        provenance_keys={"file": name},
+    )
+
+
 def recognize_tlusty(source: str | os.PathLike) -> bool:
     """Cheap sniff: does this source's name follow the vis grammar?"""
     try:

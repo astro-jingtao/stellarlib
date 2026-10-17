@@ -275,7 +275,7 @@ def register_local_product(
         collection = _bosz_collection(path_list)
         release = "2024"
     elif family == "tlusty":
-        recognized = recognize_tlusty
+        recognized = lambda p: recognize_tlusty(p) or p.name.endswith(".tar")
         collection = _tlusty_release(path_list)
         release = collection
     else:
@@ -344,25 +344,59 @@ def _bosz_collection(files: list[Path]) -> str:
 
 
 def _tlusty_release(files: list[Path]) -> str:
+    """Infer the release from the kind-7 spectra held (files or tar
+    members); kind-17 continuum files ride along in every set and carry
+    no release-discriminating Teff the kind-7 files do not."""
+    import tarfile
+
     from stellarlib.models.tlusty.backend import _infer_release
+    from stellarlib.models.tlusty.reader import parse_filename, recognize_tlusty
 
     teffs = []
     for p in files:
-        from stellarlib.models.tlusty.reader import parse_filename
-
+        if p.name.endswith(".tar"):
+            with tarfile.open(p, "r") as tf:
+                names = [
+                    m.name.rsplit("/", 1)[-1]
+                    for m in tf.getmembers()
+                    if m.isfile() and recognize_tlusty(m.name.rsplit("/", 1)[-1])
+                ]
+            for name in names:
+                facts = parse_filename(name)
+                if facts["kind"] == "7":
+                    teffs.append(facts["teff"])
+            continue
         facts = parse_filename(p.name if p.name.endswith(".gz") else p.name + ".gz")
-        teffs.append(facts["teff"])
+        if facts["kind"] == "7":
+            teffs.append(facts["teff"])
+    if not teffs:
+        raise ValueError(
+            "no kind-7 detailed spectra among the sources (kind-17 "
+            "continuum files alone are not a spectrum product)"
+        )
     return _infer_release(tuple(teffs), None)
 
 
 def _local_section(family: str, files: list[Path]) -> dict:
     if family == "tlusty":
-        from stellarlib.models.tlusty.reader import parse_filename
+        import tarfile
+
+        from stellarlib.models.tlusty.reader import parse_filename, recognize_tlusty
 
         compositions = set()
         for p in files:
-            name = p.name if p.name.endswith(".gz") else p.name + ".gz"
-            compositions.add(parse_filename(name)["composition"])
+            if p.name.endswith(".tar"):
+                with tarfile.open(p, "r") as tf:
+                    names = [
+                        m.name.rsplit("/", 1)[-1]
+                        for m in tf.getmembers()
+                        if m.isfile() and recognize_tlusty(m.name.rsplit("/", 1)[-1])
+                    ]
+                sources = names
+            else:
+                sources = [p.name if p.name.endswith(".gz") else p.name + ".gz"]
+            for name in sources:
+                compositions.add(parse_filename(name)["composition"])
         if len(compositions) == 1:
             return {"composition": compositions.pop()}
     return {}
