@@ -18,6 +18,7 @@ from stellarlib.provenance import (
     SourceClass,
     SourceRecord,
 )
+from stellarlib.unified import TRANSFORMATIONS, UnifiedView
 
 __all__ = [
     "__version__",
@@ -28,6 +29,7 @@ __all__ = [
     "ParameterSpec",
     # objects
     "NativeSpectrum",
+    "UnifiedView",
     # provenance
     "Provenance",
     "SourceRecord",
@@ -37,4 +39,6 @@ __all__ = [
     "Reference",
     # errors
     "StellarLibError",
+    # unified vocabulary
+    "TRANSFORMATIONS",
 ]

@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "family": "bosz",
+  "description": "BOSZ 2024's own characteristics and its mapping into the stellarlib unified vocabulary (definitions in registry/unified_parameters.json). Loaded and validated together with the definitions by stellarlib.registry.",
+  "mapping_version": "1",
+  "notes": [
+    "Resampled spectra store two columns (Eddington flux H_lambda, continuum) with NO wavelength column; the log-uniform sampling grid is published per resolution as a separate file (bosz2024_wave_r<R>.txt) and rows align by index across every file of that resolution — naive (wavelength, flux) parsing silently produces flux-vs-continuum garbage.",
+    "The published flux is the Eddington flux H_lambda; the surface flux is F_lambda = 4 pi H_lambda (Meszaros et al. 2024, Eq. 2). The MAST HLSP page instead instructs multiplying by pi; a blackbody cross-check (Teff 5000 K, log g 4.5, at 5000 Angstrom) favors 4 pi at the ~1% level, so the transformation '4 pi * x' implements the paper's convention.",
+    "Upstream clips H_lambda below 1e-6 erg/s/cm^2/Angstrom to zero and the continuum to 1 — a property of the published resam files. stellarlib preserves the published values verbatim: no clipping, no un-clipping, no filling. Cool-giant grid points accordingly contain exact-zero flux rows (the published clipping floor, not corruption).",
+    "The continuum column can dip below the flux by ~1e-3 erg/s/cm^2/Angstrom at some wavelengths (observed on the r500 giant set); both columns are preserved verbatim and no normalization is applied.",
+    "Three atmosphere families carry the grid: mp (MARCS plane-parallel, log g >= 3.5, model vmicro 1 km/s), ms (MARCS spherical, log g <= 3, vmicro 2 km/s), ap (ATLAS9 plane-parallel, vmicro 2 km/s, Teff >= 8250 K plus 7500-8000 K where mp is unpublished). Queries between log g 3 and 3.5 interpolate across the spherical/plane-parallel MARCS seam; the paper's own MARCS-ATLAS9 comparisons bound such seams at <=0.5% in the optical (5-10% at 3500-4000 K).",
+    "Wavelengths are vacuum below 200 nm and air above; the sidecar grid encodes this and stellarlib never converts between conventions.",
+    "The complete interpolation rectangle spans Teff 2800-12000 K (MARCS floor 2800 K). The release ceiling is 16000 K, but above 12000 K the models are sparse (500 K steps with missing low-log g rows), and ~8.5% of MARCS models are unpublished — holes, mostly at low log g. grid axes and the holes report the truth; rectangular interpolation across a holed cell is refused (Voronoi nearest-node interpolation is the hole-tolerant alternative)."
+  ],
+  "references": [
+    {
+      "citation": "Meszaros, S., et al. 2024, A&A, 688, A197",
+      "bibcode": "2024A&A...688A.197M",
+      "url": "https://arxiv.org/abs/2407.10872"
+    },
+    {
+      "citation": "Bohlin, G., et al. 2017, AJ, 154, 106 (the legacy BOSZ library)",
+      "bibcode": "2017AJ....154..106B"
+    }
+  ],
+  "products": {
+    "resampled_spectra": {
+      "field_mappings": [
+        {
+          "unified": "wavelength",
+          "native": "wavelength",
+          "origin": "native",
+          "description": "the per-resolution log-uniform sidecar grid, attached by explicit pairing; rows align by index with the flux file"
+        },
+        {
+          "unified": "wavelength_um",
+          "native": "wavelength",
+          "origin": "transformed_native",
+          "transformation": "x * 1e-4"
+        },
+        {
+          "unified": "eddington_flux",
+          "native": "flux",
+          "origin": "native",
+          "description": "column 1 of the resam file (H_lambda), verbatim including upstream-clipped zeros"
+        },
+        {
+          "unified": "surface_flux",
+          "native": "flux",
+          "origin": "transformed_native",
+          "transformation": "4 pi * x",
+          "description": "Meszaros et al. 2024 Eq. 2; see the family notes for the pi-vs-4pi dispute resolution"
+        },
+        {
+          "unified": "continuum",
+          "native": "continuum",
+          "origin": "native",
+          "description": "column 2 of the resam file, verbatim including the clipped-to-1 floor"
+        }
+      ],
+      "parameters": [
+        {
+          "name": "teff",
+          "role": "axis",
+          "values_from": "teff",
+          "source": "native"
+        },
+        {
+          "name": "log_surface_gravity",
+          "role": "axis",
+          "values_from": "logg",
+          "source": "native"
+        },
+        {
+          "name": "m_h",
+          "role": "axis",
+          "values_from": "mh",
+          "source": "native"
+        },
+        {
+          "name": "alpha_m",
+          "role": "fixed",
+          "value_from": "am",
+          "source": "native",
+          "description": "the standard downloaded set is scaled-solar ([a/M] = 0); a grid holds one value and refuses mixed-composition files"
+        },
+        {
+          "name": "carbon_m",
+          "role": "fixed",
+          "value_from": "cm",
+          "source": "native",
+          "description": "the standard downloaded set is [C/M] = 0; a grid holds one value and refuses mixed-composition files"
+        },
+        {
+          "name": "microturbulence",
+          "role": "fixed",
+          "value_from": "vmicro",
+          "source": "native",
+          "description": "per atmosphere family: 1 km/s for mp (MARCS plane-parallel), 2 km/s for ms/ap"
+        },
+        {
+          "name": "spectral_resolution",
+          "role": "fixed",
+          "value_from": "resolution",
+          "source": "native",
+          "description": "the r-token of the filename; one grid holds one resolution (the wavelength grids differ across resolutions)"
+        }
+      ]
+    }
+  }
+}

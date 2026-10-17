@@ -1,0 +1,158 @@
+{
+  "schema_version": 1,
+  "family": "tlusty",
+  "description": "TLUSTY OSTAR2002/BSTAR2006's own characteristics and its mapping into the stellarlib unified vocabulary (definitions in registry/unified_parameters.json). Loaded and validated together with the definitions by stellarlib.registry.",
+  "mapping_version": "1",
+  "notes": [
+    "One gzip ASCII file per atmosphere and spectrum kind ({comp}{teff:05d}g{logg*100:03d}v{vmicro*10:02d}.vis.{7|17}.gz); kind 7 is the detailed spectrum and kind 17 the continuum — stellarlib consumes kind 7 and never mixes kinds within one grid. A path without the .gz suffix opens path + '.gz' (the published set's on-disk names drop the suffix).",
+    "Wavelengths are AIR in the optical: line centroids of H-alpha, He I 5876, and He I 7065 in the OSTAR solar-composition spectrum sit at the NIST air values to 0.01-0.02 Angstrom (vacuum would be off by ~1.8 Angstrom). stellarlib never converts between conventions.",
+    "The sampling is the SYNSPEC native grid, ~0.03 Angstrom per point in the red optical (R ~ 2e5 at 6500 Angstrom) — far finer than typical instrumental requirements; no instrumental broadening is applied.",
+    "The published flux is the Eddington flux H_lambda; the surface flux is F_lambda = 4 pi H_lambda — the same convention as BOSZ 2024 (both libraries state it), so populations mixed across the two libraries sit on one flux scale with no cross-calibration.",
+    "The vispec archives are per scaled-solar composition (OSTAR2002: 10 values of Z/Z_sun from 0 to 2; BSTAR2006: 5). A grid is built at ONE composition; the composition tag is preserved verbatim and a grid refuses mixed-composition files.",
+    "Coverage: OSTAR2002 spans Teff 27500-55000 K (2500 K steps), log g 3.00-4.75 (0.25 dex steps); BSTAR2006 spans 15000-30000 K (1000 K steps), log g 1.75-4.75 (0.25 dex steps); the published set narrows at the hottest models. Combined with BOSZ 2024's complete rectangle ending at 12000 K, the interval 12000-15000 K has no interpolable published library — grids report their true axes and routing across the gap belongs to the application."
+  ],
+  "references": [
+    {
+      "citation": "Lanz, T., & Hubeny, I. 2003, ApJS 146, 417 (OSTAR2002)",
+      "bibcode": "2003ApJS..146..417L"
+    },
+    {
+      "citation": "Lanz, T., & Hubeny, I. 2007, ApJS 169, 83 (BSTAR2006)",
+      "bibcode": "2007ApJS..169...83L"
+    }
+  ],
+  "products": {
+    "ostar2002": {
+      "field_mappings": [
+        {
+          "unified": "wavelength",
+          "native": "wavelength",
+          "origin": "native",
+          "description": "the file's own column 1 (air wavelengths, SYNSPEC native sampling)"
+        },
+        {
+          "unified": "wavelength_um",
+          "native": "wavelength",
+          "origin": "transformed_native",
+          "transformation": "x * 1e-4"
+        },
+        {
+          "unified": "eddington_flux",
+          "native": "flux",
+          "origin": "native"
+        },
+        {
+          "unified": "surface_flux",
+          "native": "flux",
+          "origin": "transformed_native",
+          "transformation": "4 pi * x"
+        },
+        {
+          "unified": "continuum",
+          "native": null,
+          "origin": "missing",
+          "description": "kind 17 continuum files are a separate published file, not a column of the kind 7 spectrum"
+        }
+      ],
+      "parameters": [
+        {
+          "name": "teff",
+          "role": "axis",
+          "values_from": "teff",
+          "source": "native"
+        },
+        {
+          "name": "log_surface_gravity",
+          "role": "axis",
+          "values_from": "logg",
+          "source": "native"
+        },
+        {
+          "name": "composition",
+          "role": "fixed",
+          "value_from": "composition",
+          "source": "native",
+          "description": "the one-to-two-letter composition tag of the vispec archive (e.g. G = scaled-solar Z/Z_sun = 1)"
+        },
+        {
+          "name": "microturbulence",
+          "role": "fixed",
+          "value_from": "vmicro",
+          "source": "native",
+          "description": "OSTAR2002 standard set: 1 km/s (chosen to match the BOSZ ATLAS9 nodes)"
+        },
+        {
+          "name": "spectral_resolution",
+          "role": "implicit",
+          "status": "SYNSPEC native ~0.03 Angstrom sampling (R ~ 2e5 in the red optical); not a selectable product axis"
+        }
+      ]
+    },
+    "bstar2006": {
+      "field_mappings": [
+        {
+          "unified": "wavelength",
+          "native": "wavelength",
+          "origin": "native",
+          "description": "the file's own column 1 (air wavelengths, SYNSPEC native sampling)"
+        },
+        {
+          "unified": "wavelength_um",
+          "native": "wavelength",
+          "origin": "transformed_native",
+          "transformation": "x * 1e-4"
+        },
+        {
+          "unified": "eddington_flux",
+          "native": "flux",
+          "origin": "native"
+        },
+        {
+          "unified": "surface_flux",
+          "native": "flux",
+          "origin": "transformed_native",
+          "transformation": "4 pi * x"
+        },
+        {
+          "unified": "continuum",
+          "native": null,
+          "origin": "missing",
+          "description": "kind 17 continuum files are a separate published file, not a column of the kind 7 spectrum"
+        }
+      ],
+      "parameters": [
+        {
+          "name": "teff",
+          "role": "axis",
+          "values_from": "teff",
+          "source": "native"
+        },
+        {
+          "name": "log_surface_gravity",
+          "role": "axis",
+          "values_from": "logg",
+          "source": "native"
+        },
+        {
+          "name": "composition",
+          "role": "fixed",
+          "value_from": "composition",
+          "source": "native",
+          "description": "the one-to-two-letter composition tag of the vispec archive (e.g. BG = scaled-solar Z/Z_sun = 1)"
+        },
+        {
+          "name": "microturbulence",
+          "role": "fixed",
+          "value_from": "vmicro",
+          "source": "native",
+          "description": "BSTAR2006 standard set: 2 km/s (chosen to match the BOSZ ATLAS9 nodes)"
+        },
+        {
+          "name": "spectral_resolution",
+          "role": "implicit",
+          "status": "SYNSPEC native ~0.03 Angstrom sampling (R ~ 2e5 in the red optical); not a selectable product axis"
+        }
+      ]
+    }
+  }
+}

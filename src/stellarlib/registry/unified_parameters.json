@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "description": "stellarlib's own unified vocabulary: the unified fields and the physical parameters every data source maps into. Each library family's characteristics and its mapping into this vocabulary live in the family's data file models/<family>/unified_parameters.json next to its catalog.json; stellarlib.registry loads the definitions and every family file together and validates them as one registry. The human-readable document docs/unified-parameters.md is generated from the combined registry by tools/generate_parameter_docs.py; edit the JSON files, never there.",
+  "unified_fields": [
+    {
+      "name": "wavelength",
+      "unit": "Angstrom",
+      "representation": "linear",
+      "description": "wavelength of the sampling grid; the air/vacuum convention is the product's own (declared per family in notes) and is never converted"
+    },
+    {
+      "name": "wavelength_um",
+      "unit": "um",
+      "representation": "linear",
+      "description": "wavelength in micron (x * 1e-4)"
+    },
+    {
+      "name": "eddington_flux",
+      "unit": "erg/(s cm^2 Angstrom)",
+      "representation": "linear",
+      "description": "the Eddington flux H_lambda as published — the first angular moment of the specific intensity"
+    },
+    {
+      "name": "surface_flux",
+      "unit": "erg/(s cm^2 Angstrom)",
+      "representation": "linear",
+      "description": "the astrophysical surface flux F_lambda = 4 pi H_lambda (4 pi * x)"
+    },
+    {
+      "name": "continuum",
+      "unit": "erg/(s cm^2 Angstrom)",
+      "representation": "linear",
+      "description": "the continuum level as published, same units as the flux"
+    }
+  ],
+  "physical_parameters": [
+    {
+      "name": "teff",
+      "unit": "K",
+      "convention": null,
+      "description": "effective temperature; the primary axis of every spectral library"
+    },
+    {
+      "name": "log_surface_gravity",
+      "unit": "dex(cm / s2)",
+      "convention": null,
+      "description": "log10 surface gravity (same name and unit as stellariso, for cross-package consistency)"
+    },
+    {
+      "name": "m_h",
+      "unit": "dex",
+      "convention": "[M/H]",
+      "description": "overall metallicity as [M/H] of the scaled-solar composition set"
+    },
+    {
+      "name": "alpha_m",
+      "unit": "dex",
+      "convention": "[a/M]",
+      "description": "alpha-element enhancement"
+    },
+    {
+      "name": "carbon_m",
+      "unit": "dex",
+      "convention": "[C/M]",
+      "description": "carbon abundance offset"
+    },
+    {
+      "name": "microturbulence",
+      "unit": "km/s",
+      "convention": null,
+      "description": "microturbulent velocity of the model atmosphere"
+    },
+    {
+      "name": "spectral_resolution",
+      "unit": null,
+      "convention": "resolving power R = lambda / dlambda",
+      "description": "the instrumental broadening the published sampling encodes"
+    },
+    {
+      "name": "composition",
+      "unit": null,
+      "convention": "the library's own composition tag, verbatim",
+      "description": "composition selector of a per-composition product (TLUSTY tags)"
+    }
+  ]
+}
