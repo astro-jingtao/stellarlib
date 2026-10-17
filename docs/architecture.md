@@ -146,6 +146,20 @@ files actually held). Everything at the root (`database.json`, `README.md`,
 `unified-parameters.md`, `db_status.*`) is regenerated from directory
 contents alone, never copied between machines.
 
+A window declaration pins what its product holds: one resolution, one
+composition ([a/M], [C/M]), and the declared (Teff, log g, [M/H]) axis
+lists. The design enumerates exactly one spectrum file per declared
+point plus that resolution's wavelength sidecar, and the builder fetches
+exactly those files — nothing beyond the declaration, ever. The
+upstream's unit of organization is coarser: one MAST (R, [M/H])
+directory interleaves every composition and vmicro variant (~45,700
+files; docs/data-sources.md), but stellarlib never mirrors a directory;
+holding a whole slice is itself expressed by declaring the full axis
+lists. Materialization inherits the same bound — `materialize_grid`
+merges the nodes of one grid, a grid opens one product, and a product
+holds only what its window declared — so no code path can materialize
+an undeclared volume.
+
 TLUSTY's fetch channel is deliberately closed: the per-composition
 vispec tar inventory is not yet live-verified, so TLUSTY products enter
 through `register_local_product` until it is.

@@ -100,9 +100,12 @@ models.
 
 - One gzip ASCII file per atmosphere and spectrum kind:
   `{comp}{teff:05d}g{logg*100:03d}v{vmicro*10:02d}.vis.{7|17}.gz`; kind
-  7 is the detailed spectrum, kind 17 the continuum (a separate
-  published product — stellarlib consumes 7 and skips 17 with a warning
-  and a record, never mixing kinds).
+  7 is the detailed spectrum, kind 17 the continuum. Both kinds are
+  packed in the same per-composition vispec tar, so an extracted
+  official archive always contains kind-17 files next to the kind-7
+  spectra; stellarlib consumes 7 and skips 17 with a warning and a
+  record, never mixing kinds — rejecting them would make every
+  extracted tar unreadable.
 - Two columns: wavelength (Å, **air** in the optical — NIST air line
   centroids match to 0.01–0.02 Å; vacuum would be off by ~1.8 Å) and
   H_lambda in erg/s/cm²/Å. Surface flux F = 4πH — same convention as
