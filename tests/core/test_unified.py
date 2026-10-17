@@ -36,17 +36,17 @@ def _specs(**overrides) -> dict:
         "eddington_flux": FieldSpec(
             name="eddington_flux",
             native_name="flux",
-            unit="erg/s/cm^2/Angstrom",
+            unit="erg/(s cm^2 Angstrom)",
         ),
         "surface_flux": FieldSpec(
             name="surface_flux",
             native_name="flux",
-            unit="erg/s/cm^2/Angstrom",
+            unit="erg/(s cm^2 Angstrom)",
             origin=FieldOrigin.TRANSFORMED_NATIVE,
             transformation="4 pi * x",
         ),
         "continuum": FieldSpec(
-            name="continuum", native_name="continuum", unit="erg/s/cm^2/Angstrom"
+            name="continuum", native_name="continuum", unit="erg/(s cm^2 Angstrom)"
         ),
     }
     base.update(overrides)
@@ -125,7 +125,7 @@ class TestUnifiedView:
         view = UnifiedView(_native(), _specs())
         assert "surface_flux" in view
         assert view.has_field("surface_flux")
-        assert view.field_spec("surface_flux").unit == "erg/s/cm^2/Angstrom"
+        assert view.field_spec("surface_flux").unit == "erg/(s cm^2 Angstrom)"
         assert not view.has_field("photon_flux")
 
 

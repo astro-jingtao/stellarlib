@@ -56,6 +56,20 @@ class UnifiedView:
         self._computations = dict(computations or {})
         self._constants = dict(constants or {})
 
+    def with_native(self, native: NativeSpectrum) -> "UnifiedView":
+        """The same view (specs, computations, constants) over a new native.
+
+        Used by derived products (resampling, node interpolation) so the
+        result exposes the identical unified vocabulary over its new
+        arrays.
+        """
+        return UnifiedView(
+            native,
+            self._specs,
+            computations=self._computations,
+            constants=self._constants,
+        )
+
     @property
     def field_names(self) -> list[str]:
         return list(self._specs)

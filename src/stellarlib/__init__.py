@@ -9,6 +9,14 @@ __version__ = "0.1.0"
 
 from stellarlib.core import FieldSpec, ModelIdentity, ParameterRole, ParameterSpec
 from stellarlib.exceptions import StellarLibError
+from stellarlib.facade import BoszSpectra, TlustySpectra, UnifiedSpectra, construct
+from stellarlib.grid import SpectrumGrid, open_grid
+from stellarlib.interp import (
+    InterpolationRecord,
+    corner_weights,
+    resample_wavelengths,
+    voronoi_nearest,
+)
 from stellarlib.native import NativeSpectrum
 from stellarlib.provenance import (
     DataAsset,
@@ -18,6 +26,7 @@ from stellarlib.provenance import (
     SourceClass,
     SourceRecord,
 )
+from stellarlib.spectrum import GridNode, Spectrum, SpectrumSet
 from stellarlib.unified import TRANSFORMATIONS, UnifiedView
 
 __all__ = [
@@ -29,6 +38,10 @@ __all__ = [
     "ParameterSpec",
     # objects
     "NativeSpectrum",
+    "Spectrum",
+    "SpectrumSet",
+    "GridNode",
+    "SpectrumGrid",
     "UnifiedView",
     # provenance
     "Provenance",
@@ -37,6 +50,17 @@ __all__ = [
     "SourceChain",
     "DataAsset",
     "Reference",
+    # entry points
+    "open_grid",
+    "construct",
+    "UnifiedSpectra",
+    "BoszSpectra",
+    "TlustySpectra",
+    # interpolation
+    "InterpolationRecord",
+    "corner_weights",
+    "voronoi_nearest",
+    "resample_wavelengths",
     # errors
     "StellarLibError",
     # unified vocabulary
