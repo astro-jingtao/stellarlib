@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "family": "bosz",
+  "release": "2024",
+  "description": "BOSZ 2024 release tree at MAST (HLSP), verified live 2026-10-17. Products are (resolution, metallicity) directory slices; each directory interleaves the [a/M], [C/M], and vmicro variants of every (Teff, log g) node, so a stellarlib grid window pins one (a/M, C/M, vmicro-per-family) choice and enumerates its files by the filename grammar.",
+  "base_url": "https://archive.stsci.edu/hlsps/bosz/bosz2024",
+  "readme_url": "https://archive.stsci.edu/hlsps/bosz/bosz2024/hlsp_bosz_bosz_sim_all_all_v1_readme.txt",
+  "url_templates": {
+    "spectrum": "{base_url}/r{resolution}/m{mh:+.2f}/{filename}",
+    "wavelength_grid": "{base_url}/wavelength_grids/bosz2024_wave_r{resolution}.txt"
+  },
+  "verified": {
+    "date": "2026-10-17",
+    "resolutions": [500, 1000, 2000, 5000, 10000, 20000, 50000],
+    "note_original_sampling": "rorig/ holds the original-sampling variant (not a resampled product)",
+    "metallicities_r500": [
+      0.75, 0.5, 0.25, 0.0, -0.25, -0.5, -0.75, -1.0, -1.25, -1.5, -1.75,
+      -2.0, -2.25, -2.5
+    ],
+    "files_per_product_r500_m0.00": 45724,
+    "filename_variant_axes": {
+      "a": [-0.25, 0.0, 0.25],
+      "c": [-0.75, -0.25, 0.0, 0.25],
+      "v": [0, 1, 2, 4]
+    },
+    "sample_files_verified": {
+      "bosz2024_ms_t3500_g+1.0_m+0.00_a+0.00_c+0.00_v2_r500_resam.txt.gz": 40987,
+      "bosz2024_ms_t3500_g+1.0_m-1.00_a+0.00_c+0.00_v2_r500_resam.txt.gz": 40499,
+      "bosz2024_ms_t3500_g+2.0_m+0.00_a+0.00_c+0.00_v2_r500_resam.txt.gz": 41244,
+      "bosz2024_ms_t3500_g+2.0_m-1.00_a+0.00_c+0.00_v2_r500_resam.txt.gz": 40655,
+      "bosz2024_ms_t4000_g+1.0_m+0.00_a+0.00_c+0.00_v2_r500_resam.txt.gz": 42066,
+      "bosz2024_ms_t4000_g+1.0_m-1.00_a+0.00_c+0.00_v2_r500_resam.txt.gz": 41451,
+      "bosz2024_ms_t4000_g+2.0_m+0.00_a+0.00_c+0.00_v2_r500_resam.txt.gz": 42308,
+      "bosz2024_ms_t4000_g+2.0_m-1.00_a+0.00_c+0.00_v2_r500_resam.txt.gz": 41531
+    },
+    "wavelength_grids": [
+      "bosz2024_wave_r500.txt", "bosz2024_wave_r1000.txt",
+      "bosz2024_wave_r2000.txt", "bosz2024_wave_r5000.txt",
+      "bosz2024_wave_r10000.txt", "bosz2024_wave_r20000.txt",
+      "bosz2024_wave_r50000.txt"
+    ]
+  },
+  "format_notes": [
+    "resam files are two-column gzip ASCII (Eddington flux H_lambda, continuum) with no wavelength column; rows align by index with the per-resolution wavelength grid file",
+    "wavelength grids are log-uniform; r500 spans 500 Angstrom to 31.97 micron in 7500 points, r10000 in 150000 points",
+    "upstream clips H_lambda below 1e-6 erg/s/cm^2/Angstrom to zero (continuum to 1); no checksums are published"
+  ],
+  "references": [
+    "Meszaros, S., et al. 2024, A&A, 688, A197",
+    "Bohlin, G., et al. 2017, AJ, 154, 106 (legacy library)"
+  ]
+}

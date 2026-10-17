@@ -113,9 +113,19 @@ class TestResolveParametersBosz:
 
     def test_missing_required_dynamic_value_fails_loudly(self):
         dynamic = dict(self.DYNAMIC)
-        del dynamic["vmicro"]
-        with pytest.raises(KeyError, match="vmicro"):
+        del dynamic["resolution"]
+        with pytest.raises(KeyError, match="resolution"):
             resolve_parameters("bosz", "resampled_spectra", dynamic)
+
+    def test_omitted_vmicro_selects_mixed_family_fallback(self):
+        dynamic = dict(self.DYNAMIC)
+        del dynamic["vmicro"]
+        specs = {
+            p.name: p
+            for p in resolve_parameters("bosz", "resampled_spectra", dynamic)
+        }
+        assert specs["microturbulence"].role is ParameterRole.IMPLICIT
+        assert "varies by atmosphere family" in specs["microturbulence"].status
 
 
 class TestResolveParametersTlusty:

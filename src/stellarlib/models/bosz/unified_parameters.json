@@ -93,10 +93,20 @@
         },
         {
           "name": "microturbulence",
-          "role": "fixed",
-          "value_from": "vmicro",
-          "source": "native",
-          "description": "per atmosphere family: 1 km/s for mp (MARCS plane-parallel), 2 km/s for ms/ap"
+          "alternatives": [
+            {
+              "role": "fixed",
+              "value_from": "vmicro",
+              "source": "native",
+              "when": {"available": "vmicro"},
+              "description": "uniform across the set: per atmosphere family, 1 km/s for mp (MARCS plane-parallel), 2 km/s for ms/ap"
+            },
+            {
+              "role": "implicit",
+              "status": "varies by atmosphere family (mp: 1 km/s, ms/ap: 2 km/s); the set spans families — see each node's facts",
+              "when": {"missing": "vmicro"}
+            }
+          ]
         },
         {
           "name": "spectral_resolution",

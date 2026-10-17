@@ -68,7 +68,7 @@ Field mapping version: `1`.
 | `m_h` | axis (varies across the published grid) | file values `mh` | — |
 | `alpha_m` | fixed (known value for the whole product) | file value `am` | the standard downloaded set is scaled-solar ([a/M] = 0); a grid holds one value and refuses mixed-composition files |
 | `carbon_m` | fixed (known value for the whole product) | file value `cm` | the standard downloaded set is [C/M] = 0; a grid holds one value and refuses mixed-composition files |
-| `microturbulence` | fixed (known value for the whole product) | file value `vmicro` | per atmosphere family: 1 km/s for mp (MARCS plane-parallel), 2 km/s for ms/ap |
+| `microturbulence` | — | file value `vmicro`; only when {'available': 'vmicro'} or only when {'missing': 'vmicro'} | — |
 | `spectral_resolution` | fixed (known value for the whole product) | file value `resolution` | the r-token of the filename; one grid holds one resolution (the wavelength grids differ across resolutions) |
 
 ### Scientific references
