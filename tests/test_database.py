@@ -1,9 +1,12 @@
-"""Tests for the database package: design, manifest, scan, build, register.
+"""Tests for the database package: blueprint, manifest, scan, build, register.
 
-The build tests run offline against a fake HTTP session serving the real
-fixture bytes, so the fetch path (streaming sha256, 404 fetch errors,
-keep verified, nonconforming products never completed) is exercised
-without the network.
+The build tests run offline against a fake HTTP session: the fake upstream
+serves one real-format bulkdl script (listing the fixture spectra of one
+metallicity directory), those files, and the r500 wavelength grid — every
+other URL of the full blueprint answers 404. That exercises the whole
+mirror path (script fetch, in-build expansion, per-file fetch, streaming
+sha256, 404 fetch errors, keep verified, nonconforming products never
+completed) without the network.
 """
 
 from __future__ import annotations
@@ -23,19 +26,10 @@ from stellarlib.database.manifest import (
     write_manifest,
 )
 from stellarlib.database.scan import scan_database
-from stellarlib.exceptions import SourceUnavailableError
+from stellarlib.exceptions import DataIntegrityError
 
 DATA = Path(__file__).parent / "data" / "bosz"
 TLUSTY_DATA = Path(__file__).parent / "data" / "tlusty"
-
-WINDOW = {
-    "family": "bosz",
-    "label": "test_window",
-    "resolution": 500,
-    "teffs": [3500, 4000],
-    "loggs": [1.0, 2.0],
-    "mhs": [0.0, -1.0],
-}
 
 NODE_NAMES = [
     f"bosz2024_ms_t{t}_g{g}_m{m}_a+0.00_c+0.00_v2_r500_resam.txt.gz"
@@ -43,7 +37,28 @@ NODE_NAMES = [
     for g in ("+1.0", "+2.0")
     for m in ("+0.00", "-1.00")
 ]
+# one mirror directory holds one metallicity: the m+0.00 half of the set
+SOLAR_NAMES = [NODE_NAMES[i] for i in (0, 2, 4, 6)]
 WAVE_NAME = "bosz2024_wave_r500.txt"
+
+_MAST = "https://archive.stsci.edu/hlsps/bosz/bosz2024"
+SCRIPT_NAME = "hlsp_bosz_bosz2024_sim_r500_m+0.00_v1_bulkdl.sh"
+SCRIPT_URL = f"{_MAST}/download_scripts/{SCRIPT_NAME}"
+SOLAR_URLS = {
+    f"{_MAST}/r500/m+0.00/{name}": (DATA / name).read_bytes()
+    for name in SOLAR_NAMES
+}
+WAVE_URL = f"{_MAST}/wavelength_grids/{WAVE_NAME}"
+
+
+def _bulkdl_text(names) -> bytes:
+    lines = ["#!/bin/sh"]
+    for name in names:
+        lines.append(
+            f'curl -f --create-dirs --output "r500/m+0.00/{name}" '
+            f'"{_MAST}/r500/m+0.00/{name}"'
+        )
+    return ("\n".join(lines) + "\n").encode()
 
 
 class FakeResponse:
@@ -63,64 +78,97 @@ class FakeResponse:
 
 
 class FakeSession:
-    """Serves fixture bytes for known URLs; counts every call."""
+    """Serves known URLs; answers 404 for everything else and counts calls."""
 
-    def __init__(self, mapping: dict[str, bytes], missing_status: int = 404):
+    def __init__(self, mapping: dict[str, bytes]):
         self.mapping = mapping
-        self.missing_status = missing_status
         self.calls: list[str] = []
 
     def get(self, url: str, stream=True, timeout=None):
         self.calls.append(url)
         if url in self.mapping:
             return FakeResponse(200, self.mapping[url])
-        return FakeResponse(self.missing_status, b"")
+        return FakeResponse(404, b"")
 
 
-def _fixture_session() -> FakeSession:
-    mapping = {}
-    for name in NODE_NAMES:
-        url = (
-            "https://archive.stsci.edu/hlsps/bosz/bosz2024/r500/"
-            + ("m+0.00" if "_m+0.00_" in name else "m-1.00")
-            + f"/{name}"
-        )
-        mapping[url] = (DATA / name).read_bytes()
-    mapping[
-        "https://archive.stsci.edu/hlsps/bosz/bosz2024/wavelength_grids/"
-        "bosz2024_wave_r500.txt"
-    ] = (DATA / WAVE_NAME).read_bytes()
+def _mirror_session() -> FakeSession:
+    mapping = {SCRIPT_URL: _bulkdl_text(SOLAR_NAMES)}
+    for name in SOLAR_NAMES:
+        mapping[f"{_MAST}/r500/m+0.00/{name}"] = (DATA / name).read_bytes()
+    mapping[WAVE_URL] = (DATA / WAVE_NAME).read_bytes()
     return FakeSession(mapping)
 
 
-class TestBoszDesign:
-    def test_window_enumerates_family_policy_files(self):
-        from stellarlib.models.bosz.design import BOSZ_ADAPTER, family_for
-
-        (design,) = BOSZ_ADAPTER.designs(WINDOW)
-        names = {p.name for p in design.parts}
-        assert NODE_NAMES[0] in names
-        assert WAVE_NAME in names
-        assert len(design.parts) == 9
-        assert design.collection == "r500"
-        assert design.kind == "official_window"
-        # family policy: low log g is spherical MARCS v2
-        assert family_for(3500, 1.0) == ("ms", 2)
-        assert family_for(5000, 4.0) == ("mp", 1)
-        assert family_for(9000, 4.0) == ("ap", 2)
-        assert family_for(7750, 4.0) == ("ap", 2)
-        with pytest.raises(ValueError, match="seam"):
-            family_for(3500, 3.25)
-
-    def test_url_uses_metallicity_directory(self):
+class TestBlueprintDesign:
+    def test_full_library_declared(self):
         from stellarlib.models.bosz.design import BOSZ_ADAPTER
 
-        (design,) = BOSZ_ADAPTER.designs(WINDOW)
-        part = next(p for p in design.parts if "_m-1.00_" in p.name)
-        assert part.url == (
-            "https://archive.stsci.edu/hlsps/bosz/bosz2024/r500/m-1.00/"
-            + part.name
+        designs = list(BOSZ_ADAPTER.designs({"family": "bosz"}))
+        assert len(designs) == 113  # 8 broadenings x 14 metallicities + wave
+        dirs = [d for d in designs if d.collection != "wavelength_grids"]
+        assert len(dirs) == 112
+        assert {d.kind for d in designs} == {"official_mirror"}
+        assert "bosz/r500/m+0.00" in {d.directory_name for d in designs}
+        assert "bosz/rorig/m-2.50" in {d.directory_name for d in designs}
+
+    def test_directory_design_is_phase_one_script(self):
+        from stellarlib.models.bosz.design import BOSZ_ADAPTER
+
+        designs = {
+            d.directory_name: d
+            for d in BOSZ_ADAPTER.designs({"family": "bosz"})
+        }
+        design = designs["bosz/r500/m+0.00"]
+        (part,) = design.parts
+        assert part.name == SCRIPT_NAME
+        assert part.role == "bulk_manifest"
+        assert part.url == SCRIPT_URL
+
+    def test_wave_product_lists_all_seven_grids(self):
+        from stellarlib.models.bosz.design import BOSZ_ADAPTER
+
+        designs = {
+            d.directory_name: d
+            for d in BOSZ_ADAPTER.designs({"family": "bosz"})
+        }
+        design = designs["bosz/wavelength_grids/all"]
+        assert design.collection == "wavelength_grids"
+        names = [p.name for p in design.parts]
+        assert names == [
+            f"bosz2024_wave_r{r}.txt"
+            for r in (500, 1000, 2000, 5000, 10000, 20000, 50000)
+        ]
+        assert {p.role for p in design.parts} == {"wavelength_grid"}
+
+    def test_parse_bulkdl_script(self):
+        from stellarlib.models.bosz.design import parse_bulkdl_script
+
+        pairs = parse_bulkdl_script(_bulkdl_text(SOLAR_NAMES).decode())
+        assert pairs == tuple(
+            (name, f"{_MAST}/r500/m+0.00/{name}") for name in SOLAR_NAMES
         )
+        with pytest.raises(ValueError, match="unparseable"):
+            parse_bulkdl_script('curl -f --weird "x"\n')
+        with pytest.raises(ValueError, match="no files"):
+            parse_bulkdl_script("#!/bin/sh\n")
+
+    def test_expand_design_needs_cached_script(self, tmp_path):
+        from stellarlib.models.bosz.design import BOSZ_ADAPTER
+
+        designs = {
+            d.directory_name: d
+            for d in BOSZ_ADAPTER.designs({"family": "bosz"})
+        }
+        design = designs["bosz/r500/m+0.00"]
+        assert BOSZ_ADAPTER.expand_design(design, tmp_path) is design
+        (tmp_path / SCRIPT_NAME).write_bytes(_bulkdl_text(SOLAR_NAMES))
+        expanded = BOSZ_ADAPTER.expand_design(design, tmp_path)
+        assert len(expanded.parts) == 1 + len(SOLAR_NAMES)
+        assert expanded.parts[0].name == SCRIPT_NAME
+        assert [p.name for p in expanded.parts[1:]] == SOLAR_NAMES
+        # the wavelength product expands to itself
+        wave = designs["bosz/wavelength_grids/all"]
+        assert BOSZ_ADAPTER.expand_design(wave, tmp_path) is wave
 
 
 class TestManifest:
@@ -129,7 +177,7 @@ class TestManifest:
             family="bosz",
             release="2024",
             label="x",
-            kind="official_window",
+            kind="official_mirror",
             source_class="official_archive",
             note="n",
             format="bosz_resam",
@@ -144,8 +192,6 @@ class TestManifest:
         (tmp_path / "MANIFEST.json").write_text(
             json.dumps({"schema": "other", "family": "bosz"}), encoding="utf-8"
         )
-        from stellarlib.exceptions import DataIntegrityError
-
         with pytest.raises(DataIntegrityError, match="schema"):
             read_manifest(tmp_path)
 
@@ -156,56 +202,76 @@ class TestScan:
         directory.mkdir(parents=True)
         return directory
 
-    def test_two_state_verdicts(self, tmp_path):
-        directory = self._product(tmp_path, "w")
-        good = NODE_NAMES[0]
-        (directory / good).write_bytes((DATA / good).read_bytes())
-        tampered = NODE_NAMES[1]
-        (directory / tampered).write_bytes(b"tampered")
-        manifest = empty_manifest(
+    def _mirror_manifest(self, label: str) -> dict:
+        return empty_manifest(
             family="bosz",
             release="2024",
-            label="w",
-            kind="official_window",
+            label=label,
+            kind="official_mirror",
             source_class="official_archive",
             note="",
             format="bosz_resam",
             references=[],
-            family_section={"window": dict(WINDOW)},
-        )
-        manifest["parts"] = {
-            good: {"file": good, "sha256": _sha(DATA / good)},
-            tampered: {
-                "file": tampered,
-                "sha256": "0" * 64,
+            family_section={
+                "mirror": {"broadening": "r500", "metallicity": 0.0}
             },
-            NODE_NAMES[2]: {
+        )
+
+    def test_two_state_verdicts(self, tmp_path):
+        directory = self._product(tmp_path, "m+0.00")
+        (directory / SCRIPT_NAME).write_bytes(_bulkdl_text(SOLAR_NAMES))
+        good = SOLAR_NAMES[0]
+        (directory / good).write_bytes((DATA / good).read_bytes())
+        tampered = SOLAR_NAMES[1]
+        (directory / tampered).write_bytes(b"tampered")
+        manifest = self._mirror_manifest("m+0.00")
+        manifest["parts"] = {
+            SCRIPT_NAME: {"file": SCRIPT_NAME, "sha256": _sha_str(_bulkdl_text(SOLAR_NAMES))},
+            good: {"file": good, "sha256": _sha(DATA / good)},
+            tampered: {"file": tampered, "sha256": "0" * 64},
+            SOLAR_NAMES[2]: {
                 # a recorded failed fetch: an HTTP status is a fact
                 # about one attempt, never a publication claim
-                "file": NODE_NAMES[2],
+                "file": SOLAR_NAMES[2],
                 "http_status": 404,
                 "error": "not found",
             },
         }
         write_manifest(directory, manifest)
-        report = scan_database(tmp_path, declarations=[dict(WINDOW)])
+        report = scan_database(
+            tmp_path,
+            declarations=[{"family": "bosz"}],
+        )
         by_path = {p.label_path: p for p in report.products}
-        product = by_path["bosz/r500/w"]
+        product = by_path["bosz/r500/m+0.00"]
         assert product.state == "incomplete"
         kinds = {v.part: v.kind for v in product.verdicts}
+        assert kinds[SCRIPT_NAME] == VerdictKind.OK
         assert kinds[good] == VerdictKind.OK
-        assert kinds[NODE_NAMES[1]] == VerdictKind.NONCONFORMING
-        assert kinds[NODE_NAMES[2]] == VerdictKind.MISSING
-        assert kinds[NODE_NAMES[3]] == VerdictKind.MISSING
+        assert kinds[tampered] == VerdictKind.NONCONFORMING
+        assert kinds[SOLAR_NAMES[2]] == VerdictKind.MISSING
+        assert kinds[SOLAR_NAMES[3]] == VerdictKind.MISSING
         assert report.missing_part_count() >= 2
         assert len(report.nonconforming_parts()) == 1
 
-    def test_designed_but_absent_product_reports_all_missing(self, tmp_path):
-        report = scan_database(tmp_path, declarations=[dict(WINDOW)])
-        product = report.products[0]
+    def test_designed_but_absent_product_reports_missing(self, tmp_path):
+        report = scan_database(tmp_path, declarations=[{"family": "bosz"}])
+        by_path = {p.label_path: p for p in report.products}
+        product = by_path["bosz/r500/m+0.00"]
         assert product.state == "incomplete"
         assert all(v.kind == VerdictKind.MISSING for v in product.verdicts)
+        assert product.verdicts[0].part == SCRIPT_NAME
         assert product.directory is None
+
+    def test_old_window_schema_rejected(self, tmp_path):
+        (tmp_path / "design.json").write_text(
+            json.dumps({"schema": "stellarlib-design/1", "windows": []}),
+            encoding="utf-8",
+        )
+        with pytest.raises(ValueError, match="stellarlib-design/1"):
+            scan_database(tmp_path)
+        with pytest.raises(ValueError, match="stellarlib-design/1"):
+            build_database(tmp_path, declarations=[{"family": "bosz"}])
 
     def test_unregistered_directory_reported(self, tmp_path):
         stray = tmp_path / "stray" / "a" / "b"
@@ -220,57 +286,94 @@ def _sha(path: Path) -> str:
     return sha256_file(path)
 
 
+def _sha_str(payload: bytes) -> str:
+    import hashlib
+
+    return hashlib.sha256(payload).hexdigest()
+
+
 class TestBuild:
     def test_dry_run_touches_nothing(self, tmp_path, capsys):
-        build_database(tmp_path, declarations=[dict(WINDOW)], dry_run=True)
+        build_database(
+            tmp_path, declarations=[{"family": "bosz"}], dry_run=True
+        )
         assert not (tmp_path / "design.json").exists()
-        assert "test_window" in capsys.readouterr().out
+        out = capsys.readouterr().out
+        assert "bosz/r500/m+0.00" in out
+        assert "113 product(s)" in out
 
-    def test_fetches_records_and_opens(self, tmp_path):
-        session = _fixture_session()
-        db = build_database(tmp_path, declarations=[dict(WINDOW)], session=session)
-        assert len(session.calls) == 9
-        product = db.products[0]
-        assert product.label == "test_window"
-        directory = tmp_path / "bosz" / "r500" / "test_window"
-        assert (directory / WAVE_NAME).exists()
-        entry = product.manifest["parts"][NODE_NAMES[0]]
-        assert entry["sha256"] == _sha(DATA / NODE_NAMES[0])
-        assert entry["url"].endswith(NODE_NAMES[0])
+    def test_fetches_script_expands_and_completes(self, tmp_path):
+        session = _mirror_session()
+        db = build_database(
+            tmp_path, declarations=[{"family": "bosz"}], session=session
+        )
+        # the blueprint was written whole
+        design = json.loads(
+            (tmp_path / "design.json").read_text(encoding="utf-8")
+        )
+        assert design["schema"] == "stellarlib-design/2"
+        assert design["blueprint"] == [{"family": "bosz"}]
+        # the mirror product completed: script + 4 spectra
+        directory = tmp_path / "bosz" / "r500" / "m+0.00"
+        manifest = read_manifest(directory)
+        assert manifest["kind"] == "official_mirror"
+        assert manifest["family_section"]["mirror"] == {
+            "broadening": "r500",
+            "metallicity": 0.0,
+        }
+        assert len(manifest["parts"]) == 1 + len(SOLAR_NAMES)
+        entry = manifest["parts"][SOLAR_NAMES[0]]
+        assert entry["sha256"] == _sha(DATA / SOLAR_NAMES[0])
+        assert entry["url"].endswith(SOLAR_NAMES[0])
+        # every other blueprint product recorded its failed script fetch
+        other = read_manifest(tmp_path / "bosz" / "r500" / "m+0.25")
+        other_script = "hlsp_bosz_bosz2024_sim_r500_m+0.25_v1_bulkdl.sh"
+        assert other["parts"][other_script]["http_status"] == 404
+        # the wavelength product completed for r500, 404 for the rest
+        wave = read_manifest(tmp_path / "bosz" / "wavelength_grids" / "all")
+        assert wave["parts"][WAVE_NAME]["sha256"] == _sha(DATA / WAVE_NAME)
+        assert len(wave["parts"]) == 7
         # inventory and status were regenerated
         assert (tmp_path / "database.json").exists()
         assert (tmp_path / "README.md").exists()
         assert (tmp_path / "db_status.md").exists()
-        status = (tmp_path / "db_status.json").read_text(encoding="utf-8")
-        assert '"complete"' in status
-        # the built product opens as a grid
-        grid = db.grid("bosz/2024", label="test_window")
-        assert len(grid) == 8
+        # the built mirror opens as a grid: composition selection and
+        # cross-product wave pairing included (the metallicity label
+        # exists in every broadening, so the collection is pinned too)
+        grid = db.grid("bosz/2024", collection="r500", label="m+0.00")
+        assert len(grid) == 4
+        assert grid.axes["m_h"] == (0.0,)
+        notes = grid.sets[0].notes
+        assert notes["selection"]["files_total"] == 4
+        assert notes["selection"]["vmicro"] == "family"
+        assert notes["wave_file"].endswith(WAVE_NAME)
 
     def test_second_build_keeps_verified(self, tmp_path):
-        session = _fixture_session()
-        build_database(tmp_path, declarations=[dict(WINDOW)], session=session)
-        session2 = _fixture_session()
+        session = _mirror_session()
+        build_database(tmp_path, declarations=[{"family": "bosz"}], session=session)
+        session2 = _mirror_session()
         build_database(tmp_path, session=session2)
-        assert session2.calls == []
+        assert SCRIPT_URL not in session2.calls
+        for name in SOLAR_NAMES:
+            assert f"{_MAST}/r500/m+0.00/{name}" not in session2.calls
 
     def test_404_records_fetch_error_and_retries(self, tmp_path):
-        session = _fixture_session()
-        build_database(tmp_path, declarations=[dict(WINDOW)], session=session)
-        # new declaration adds a point the fake upstream does not serve
-        from stellarlib.models.bosz.design import bosz_filename
-
-        missing_name = bosz_filename(3500, 1.0, -0.5, 0.0, 0.0, 500)
-        holed = dict(
-            WINDOW,
-            label="holed",
-            teffs=[3500],
-            loggs=[1.0],
-            mhs=[0.0, -0.5],
+        # the script lists a spectrum the fake upstream does not serve yet
+        broken = FakeSession(
+            {
+                SCRIPT_URL: _bulkdl_text(SOLAR_NAMES),
+                WAVE_URL: (DATA / WAVE_NAME).read_bytes(),
+                **{
+                    f"{_MAST}/r500/m+0.00/{n}": (DATA / n).read_bytes()
+                    for n in SOLAR_NAMES[:3]
+                },
+            }
         )
-        session2 = _fixture_session()
-        build_database(tmp_path, declarations=[dict(holed)], session=session2)
-        directory = tmp_path / "bosz" / "r500" / "holed"
+        build_database(
+            tmp_path, declarations=[{"family": "bosz"}], session=broken
+        )
+        missing_name = SOLAR_NAMES[3]
+        directory = tmp_path / "bosz" / "r500" / "m+0.00"
         manifest = read_manifest(directory)
         entry = manifest["parts"][missing_name]
         assert entry["http_status"] == 404
@@ -280,21 +383,24 @@ class TestBuild:
         # scan reports the part as missing (the builder's automatic
         # work); no nonconforming verdict is invented from the 404
         report = scan_database(tmp_path)
-        holed_report = next(
-            p for p in report.products if p.design.label == "holed"
+        mirror = next(
+            p for p in report.products if p.label_path == "bosz/r500/m+0.00"
         )
-        assert holed_report.state == "incomplete"
-        kinds = {v.part: v.kind for v in holed_report.verdicts}
+        assert mirror.state == "incomplete"
+        kinds = {v.part: v.kind for v in mirror.verdicts}
         assert kinds[missing_name] == VerdictKind.MISSING
-        assert all(v.kind != VerdictKind.NONCONFORMING for v in holed_report.verdicts)
+        assert all(
+            v.kind != VerdictKind.NONCONFORMING for v in mirror.verdicts
+        )
         # a rebuild retries the failed part — a 404 says nothing about
         # whether the upstream will serve it tomorrow
-        session3 = _fixture_session()
-        build_database(tmp_path, session=session3)
+        build_database(tmp_path, session=_mirror_session())
+        manifest = read_manifest(directory)
         assert (
-            "https://archive.stsci.edu/hlsps/bosz/bosz2024/r500/"
-            f"m-0.50/{missing_name}" in session3.calls
+            manifest["parts"][missing_name]["sha256"]
+            == _sha(DATA / missing_name)
         )
+        assert (directory / missing_name).exists()
 
 
 class TestRegisterLocalProduct:
@@ -316,6 +422,12 @@ class TestRegisterLocalProduct:
         db = open_database(tmp_path)
         grid = db.grid("bosz/2024", label="my_window")
         assert len(grid) == 8
+        # registered products scan against their own recorded parts
+        report = scan_database(tmp_path)
+        registered = next(
+            p for p in report.products if p.label_path == "bosz/r500/my_window"
+        )
+        assert registered.state == "complete"
 
     def test_reference_mode_keeps_files_in_place(self, tmp_path):
         original = tmp_path / "original"
@@ -369,20 +481,6 @@ class TestRegisterLocalProduct:
         db = open_database(tmp_path)
         grid = db.grid("tlusty/OSTAR2002", label="ostar_g")
         assert len(grid) == 4
-
-    def test_tlusty_fetch_channel_closed(self, tmp_path):
-        from stellarlib.models.tlusty.design import TLUSTY_ADAPTER
-        from stellarlib.database.design import PartDesign, ProductDesign
-
-        design = ProductDesign(
-            family="tlusty",
-            collection="OSTAR2002",
-            label="x",
-            kind="official_window",
-            parts=(PartDesign(name="G30000g300v10.vis.7.gz", url=None),),
-        )
-        with pytest.raises(SourceUnavailableError, match="register_local_product"):
-            TLUSTY_ADAPTER.fetch_part(design, design.parts[0], tmp_path)
 
 
 class TestDatabaseOpen:

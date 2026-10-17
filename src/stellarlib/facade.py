@@ -158,7 +158,7 @@ class UnifiedSpectra(SpectrumGrid, ABC):
                     f"{len(missing)} missing node(s) "
                     f"{[dict(zip(self._selectable, m)) for m in missing]}; "
                     "rectangular interpolation is impossible there — use "
-                    "interp='voronoi' or select a hole-free window"
+                    "interp='voronoi' or select a hole-free grid"
                 )
         return idx, w, clamped
 
@@ -291,7 +291,7 @@ class UnifiedSpectra(SpectrumGrid, ABC):
                 f"the bracket cell of {dict(requested)} contains missing "
                 f"node(s) {[dict(zip(self._selectable, m)) for m in missing]}; "
                 "rectangular interpolation is impossible there — use "
-                "interp='voronoi' or select a hole-free window"
+                "interp='voronoi' or select a hole-free grid"
             )
 
         corners = [self.load_node(k) for k in corner_keys]
@@ -413,22 +413,47 @@ class BoszSpectra(UnifiedSpectra):
         wave_path=None,
         database=None,
         label=None,
+        collection=None,
+        am=0.0,
+        cm=0.0,
+        vmicro=None,
     ) -> "BoszSpectra":
         """Load BOSZ spectra from local files/directories or a database.
 
-        ``paths`` may be a directory (the wavelength sidecar is discovered
-        per the known layouts, or pinned with ``wave_path``), files, or
-        both. ``database``/``label`` load a product from a database built
-        with ``stellarlib.build_database``.
+        ``paths`` may be a directory (a mirror is read by selecting one
+        composition: ``am``/``cm`` default 0, ``vmicro`` the family
+        policy; the wavelength sidecar is discovered per the known
+        layouts, or pinned with ``wave_path``), files, or both.
+        ``database``/``label`` load a product from a database built with
+        ``stellarlib.build_database`` — a mirror product needs its
+        ``collection`` (e.g. ``"r500"``) when the metallicity label alone
+        is ambiguous.
         """
         if database is not None:
-            return cls(_database_grid("bosz", database, label).sets)
+            return cls(
+                _database_grid(
+                    "bosz",
+                    database,
+                    label,
+                    collection=collection,
+                    am=am,
+                    cm=cm,
+                    vmicro=vmicro,
+                ).sets
+            )
         if paths is None:
             raise ValueError(
                 "construct('bosz/2024') requires paths= of local files or "
                 "database= of a built database"
             )
-        grid = SpectrumGrid.from_paths("bosz", _as_path_list(paths), wave_path=wave_path)
+        grid = SpectrumGrid.from_paths(
+            "bosz",
+            _as_path_list(paths),
+            wave_path=wave_path,
+            am=am,
+            cm=cm,
+            vmicro=vmicro,
+        )
         return cls(grid.sets)
 
 
@@ -462,11 +487,13 @@ class TlustySpectra(UnifiedSpectra):
         return cls(grid.sets)
 
 
-def _database_grid(family: str, database, label) -> SpectrumGrid:
+def _database_grid(
+    family: str, database, label, collection=None, **selection
+) -> SpectrumGrid:
     from stellarlib.database import open_database
 
     db = database if not isinstance(database, (str, Path)) else open_database(database)
-    return db.grid(family, label=label)
+    return db.grid(family, label=label, collection=collection, **selection)
 
 
 def _as_path_list(paths) -> list:

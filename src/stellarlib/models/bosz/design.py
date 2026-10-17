@@ -1,21 +1,29 @@
-"""BOSZ family adapter: window designs and MAST fetching.
+"""BOSZ family adapter: whole-directory mirrors of the MAST release tree.
 
-A BOSZ product is one declared window — (resolution, [a/M], [C/M]) plus
-the (Teff, log g, [M/H]) points to hold. The design enumerates one resam
-file per point using the filename grammar and the atmosphere-family
-policy proven downstream (ms for log g <= 3, vmicro 2; mp for log g >=
-3.5 and Teff <= 8000 K, vmicro 1; ap for Teff >= 8250 K and for
-7500-8000 K where mp is unavailable, vmicro 2), plus the per-resolution
-wavelength grid. Fetching is per-file HTTP from the verified MAST tree; a
-404 is recorded as a failed fetch attempt — the part stays missing and
-is retried on the next build. No publication status is inferred from an
-HTTP status; unpublished nodes are known only through the confirmed
-family policy constants (family_for) at design time.
+The upstream publishing unit is one (broadening, metallicity) directory,
+and its official bulk package is the per-directory ``bulkdl.sh`` script —
+upstream's own manifest listing every spectrum file of that directory.
+A stellarlib product is therefore one directory's complete mirror: the
+design fetches the official script first (a designed part in its own
+right, cached in the product directory under its upstream name), then
+every file the script lists. The blueprint declares all 112 directory
+mirrors plus the ``wavelength_grids`` directory; no subset enumeration
+exists anywhere on the fetch path.
+
+Query-side publication knowledge stays in ``family_for`` (the confirmed
+atmosphere-family and vmicro assignment): grids opened over a mirror
+select one composition and the family-policy vmicro per node, and the
+seams (log g strictly between 3 and 3.5; 8000-8250 K at log g > 3) are
+known only there — never inferred from an HTTP status. A fetch 404 is
+recorded as a failed fetch attempt; the part stays missing and is
+retried on the next build.
 """
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, Mapping
@@ -30,14 +38,48 @@ from stellarlib.database.design import (
     classify_part_generic,
 )
 from stellarlib.exceptions import SourceUnavailableError
-from stellarlib.models.bosz.reader import parse_filename
 
-__all__ = ["BoszAdapter", "BOSZ_ADAPTER", "bosz_filename", "family_for"]
+__all__ = [
+    "BoszAdapter",
+    "BOSZ_ADAPTER",
+    "bosz_filename",
+    "family_for",
+    "bulkdl_script_name",
+    "BOSZ_BROADENINGS",
+    "BOSZ_METALLICITIES",
+]
 
 _CHUNK = 1 << 20
 _TIMEOUT_GET = 1800
-_RELEASE = "2024"
 _BASE = "https://archive.stsci.edu/hlsps/bosz/bosz2024"
+
+# The verified upstream inventory (docs/data-sources.md, catalog.json):
+# 8 broadenings x 14 metallicity directories, every one holding 45,724
+# spectrum files as enumerated by its official bulkdl script.
+_BROADENING_NAMES = {
+    500: "r500",
+    1000: "r1000",
+    2000: "r2000",
+    5000: "r5000",
+    10000: "r10000",
+    20000: "r20000",
+    50000: "r50000",
+    "orig": "rorig",
+}
+BOSZ_BROADENINGS: tuple[int | str, ...] = tuple(_BROADENING_NAMES)
+BOSZ_METALLICITIES: tuple[float, ...] = (
+    0.75, 0.5, 0.25, 0.0, -0.25, -0.5, -0.75,
+    -1.0, -1.25, -1.5, -1.75, -2.0, -2.25, -2.5,
+)
+_WAVE_PRODUCT_LABEL = "all"
+_WAVE_FILES = tuple(
+    f"bosz2024_wave_r{r}.txt"
+    for r in (500, 1000, 2000, 5000, 10000, 20000, 50000)
+)
+
+_CURL_LINE_RE = re.compile(
+    r'^curl\s+.*--output\s+"([^"]+)"\s+"(https://[^"]+)"'
+)
 
 
 def family_for(teff: int, logg: float) -> tuple[str, int]:
@@ -49,6 +91,10 @@ def family_for(teff: int, logg: float) -> tuple[str, int]:
     and for 7500-8000 K where mp is unpublished. log g strictly between 3
     and 3.5 has no family (the published grids step over the seam);
     Teff strictly between 8000 and 8250 K with log g > 3 has none either.
+
+    This is query-side knowledge — how a grid picks each node's file
+    inside a mirror. The fetch path never consults it: what is
+    published is what the official bulkdl script lists.
     """
     if logg <= 3.0:
         return "ms", 2
@@ -73,6 +119,7 @@ def family_for(teff: int, logg: float) -> tuple[str, int]:
 def bosz_filename(
     teff: int, logg: float, mh: float, am: float, cm: float, resolution: int
 ) -> str:
+    """The canonical filename of one node's spectrum (query-side naming)."""
     atmos, vmicro = family_for(teff, logg)
     return (
         f"bosz2024_{atmos}_t{teff}_g{logg:+.1f}_m{mh:+.2f}_a{am:+.2f}"
@@ -80,60 +127,78 @@ def bosz_filename(
     )
 
 
-def _spectrum_url(filename: str, resolution: int, mh: float) -> str:
-    return f"{_BASE}/r{resolution}/m{mh:+.2f}/{filename}"
-
-
-def _window_facts(declaration: Mapping) -> dict:
-    return {
-        "resolution": int(declaration["resolution"]),
-        "teffs": [int(t) for t in declaration["teffs"]],
-        "loggs": [float(g) for g in declaration["loggs"]],
-        "mhs": [float(m) for m in declaration["mhs"]],
-        "am": float(declaration.get("am", 0.0)),
-        "cm": float(declaration.get("cm", 0.0)),
-    }
-
-
-def _enumerate_parts(facts: Mapping) -> tuple[PartDesign, ...]:
-    parts = []
-    seen = set()
-    for teff in facts["teffs"]:
-        for logg in facts["loggs"]:
-            for mh in facts["mhs"]:
-                name = bosz_filename(
-                    teff, logg, mh, facts["am"], facts["cm"], facts["resolution"]
-                )
-                if name in seen:
-                    continue
-                seen.add(name)
-                parts.append(
-                    PartDesign(
-                        name=name,
-                        url=_spectrum_url(name, facts["resolution"], mh),
-                    )
-                )
-    parts.append(
-        PartDesign(
-            name=f"bosz2024_wave_r{facts['resolution']}.txt",
-            url=f"{_BASE}/wavelength_grids/"
-            f"bosz2024_wave_r{facts['resolution']}.txt",
-            role="wavelength_grid",
-        )
+def bulkdl_script_name(broadening: int | str, mh: float) -> str:
+    """The upstream name of one directory's official bulk-download script."""
+    return (
+        f"hlsp_bosz_bosz2024_sim_{_BROADENING_NAMES[broadening]}_"
+        f"m{mh:+.2f}_v1_bulkdl.sh"
     )
-    return tuple(parts)
 
 
-def _window_design(declaration: Mapping) -> ProductDesign:
-    facts = _window_facts(declaration)
-    label = str(declaration["label"])
+def _metallicity_directory(mh: float) -> str:
+    return f"m{mh:+.2f}"
+
+
+def parse_bulkdl_script(text: str) -> tuple[tuple[str, str], ...]:
+    """Extract every (filename, url) pair from an official bulkdl script.
+
+    The script is upstream's manifest of one directory; its lines are
+    ``curl ... --output "<relative path>" "<absolute url>"``. Only
+    well-formed lines are accepted — a script stellarlib cannot parse
+    verbatim is a hard error, never a partially-adopted file list.
+    """
+    pairs = []
+    for line in text.splitlines():
+        if not line.startswith("curl "):
+            continue
+        match = _CURL_LINE_RE.match(line)
+        if match is None:
+            raise ValueError(
+                f"unparseable bulkdl script line: {line!r}; the upstream "
+                "script format changed — re-verify the catalog"
+            )
+        output_path, url = match.groups()
+        filename = output_path.rsplit("/", 1)[-1]
+        pairs.append((filename, url))
+    if not pairs:
+        raise ValueError("bulkdl script lists no files")
+    return tuple(pairs)
+
+
+def _directory_design(broadening: int | str, mh: float) -> ProductDesign:
+    name = _BROADENING_NAMES[broadening]
+    script = bulkdl_script_name(broadening, mh)
     return ProductDesign(
         family="bosz",
-        collection=f"r{facts['resolution']}",
-        label=label,
-        kind="official_window",
-        parts=_enumerate_parts(facts),
-        facts=facts,
+        collection=name,
+        label=_metallicity_directory(mh),
+        kind="official_mirror",
+        parts=(
+            PartDesign(
+                name=script,
+                url=f"{_BASE}/download_scripts/{script}",
+                role="bulk_manifest",
+            ),
+        ),
+        facts={"broadening": name, "metallicity": mh},
+    )
+
+
+def _wave_design() -> ProductDesign:
+    return ProductDesign(
+        family="bosz",
+        collection="wavelength_grids",
+        label=_WAVE_PRODUCT_LABEL,
+        kind="official_mirror",
+        parts=tuple(
+            PartDesign(
+                name=name,
+                url=f"{_BASE}/wavelength_grids/{name}",
+                role="wavelength_grid",
+            )
+            for name in _WAVE_FILES
+        ),
+        facts={"directory": "wavelength_grids"},
     )
 
 
@@ -141,14 +206,48 @@ class BoszAdapter:
     family = "bosz"
 
     def designs(self, declaration: Mapping) -> Iterable[ProductDesign]:
-        return (_window_design(declaration),)
+        """The complete upstream surface for a ``{"family": "bosz"}``
+        blueprint entry: all 112 directory mirrors plus the
+        wavelength_grids directory. There is no partial form."""
+        designs = [
+            _directory_design(b, mh)
+            for b in BOSZ_BROADENINGS
+            for mh in BOSZ_METALLICITIES
+        ]
+        designs.append(_wave_design())
+        return designs
 
-    def design_of_manifest(self, manifest: Mapping) -> ProductDesign | None:
+    def expand_design(
+        self, design: ProductDesign, directory: Path
+    ) -> ProductDesign:
+        """Replace the phase-1 part (the bulkdl script) with the script
+        plus every file it lists, once the script is cached in the
+        product directory."""
+        if design.facts.get("metallicity") is None:
+            return design  # wavelength_grids product needs no expansion
+        script = directory / design.parts[0].name
+        if not script.is_file():
+            return design
+        listed = parse_bulkdl_script(script.read_text(encoding="utf-8"))
+        parts = (design.parts[0],) + tuple(
+            PartDesign(name=name, url=url) for name, url in listed
+        )
+        return dataclasses.replace(design, parts=parts)
+
+    def design_of_manifest(
+        self, manifest: Mapping, directory: Path
+    ) -> ProductDesign | None:
         section = manifest.get("family_section") or {}
-        window = section.get("window")
-        if window is None:
+        mirror = section.get("mirror")
+        if mirror is None:
             return None
-        return _window_design(dict(window, label=manifest["label"]))
+        broadening = mirror["broadening"]
+        key = int(broadening[1:]) if broadening != "rorig" else "orig"
+        design = _directory_design(key, float(mirror["metallicity"]))
+        design = self.expand_design(design, Path(directory))
+        if manifest.get("label") != design.label:
+            design = dataclasses.replace(design, label=manifest["label"])
+        return design
 
     def classify_part(
         self, design: ProductDesign, part: PartDesign, directory: Path,

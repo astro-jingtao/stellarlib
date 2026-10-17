@@ -72,12 +72,22 @@ class TestSetConstruction:
         assert spec.role is ParameterRole.IMPLICIT
         assert "varies by atmosphere family" in spec.status
 
-    def test_mixed_composition_refused(self, tmp_path):
-        # same window but a different [a/M] sneaks in
+    def test_mixed_composition_is_a_selection(self, tmp_path):
+        # a mirror interleaves compositions: reading one is a selection
         renegade = tmp_path / "bosz2024_ms_t3500_g+1.0_m+0.00_a+0.25_c+0.00_v2_r500_resam.txt.gz"
         shutil.copy(DATA / NODE_NAMES[0], renegade)
-        with pytest.raises(MetadataConflictError, match="one set holds one am"):
-            read_bosz([DATA / NODE_NAMES[1], renegade])
+        sources = [DATA / name for name in NODE_NAMES] + [renegade]
+        solar = read_bosz(sources)
+        assert len(solar) == 8  # the a+0.25 file is not part of it
+        assert solar.notes["selection"] == {
+            "am": 0.0, "cm": 0.0, "vmicro": "family",
+            "files_total": 9, "files_selected": 8,
+        }
+        enriched = read_bosz(sources, am=0.25)
+        assert len(enriched) == 1
+        assert enriched.notes["selection"]["files_selected"] == 1
+        with pytest.raises(ValueError, match="available"):
+            read_bosz(sources, am=0.25, cm=0.25)
 
     def test_mixed_resolution_refused(self, tmp_path):
         renegade = tmp_path / "bosz2024_ms_t3500_g+1.0_m+0.00_a+0.00_c+0.00_v2_r1000_resam.txt.gz"

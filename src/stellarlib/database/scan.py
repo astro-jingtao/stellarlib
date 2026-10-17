@@ -16,6 +16,7 @@ from pathlib import Path
 
 from stellarlib.database.design import (
     FamilyAdapter,
+    PartDesign,
     PartVerdict,
     ProductDesign,
     VerdictKind,
@@ -132,7 +133,21 @@ def _read_declarations(root: Path) -> list[dict]:
     if not path.exists():
         return []
     payload = json.loads(path.read_text(encoding="utf-8"))
-    return list(payload.get("windows", []))
+    schema = payload.get("schema")
+    if schema == "stellarlib-design/1":
+        raise ValueError(
+            f"{path}: schema 'stellarlib-design/1' (window declarations) is "
+            "from the pre-blueprint design and is not migrated; a blueprint "
+            "(schema 'stellarlib-design/2') declares the full upstream "
+            "library per family — declare it anew after removing the old "
+            "design.json"
+        )
+    if schema != "stellarlib-design/2":
+        raise ValueError(
+            f"{path}: unknown design schema {schema!r} "
+            "(expected 'stellarlib-design/2')"
+        )
+    return list(payload.get("blueprint", []))
 
 
 def _adapter_for(family: str) -> FamilyAdapter:
@@ -157,7 +172,7 @@ def scan_database(
 ) -> DatabaseReport:
     """Scan one database root: every designed product, every part judged.
 
-    ``declarations`` adds window declarations for this scan only (used by
+    ``declarations`` adds blueprint entries for this scan only (used by
     ``build_database(dry_run=True)`` to plan without writing design.json).
     """
     from stellarlib.database.manifest import read_manifest
@@ -170,7 +185,7 @@ def scan_database(
     for declaration in [*_read_declarations(root), *(declarations or [])]:
         family = declaration.get("family")
         if family is None:
-            raise ValueError(f"design declaration without family: {declaration!r}")
+            raise ValueError(f"blueprint declaration without family: {declaration!r}")
         adapter = _adapter_for(family)
         for design in adapter.designs(declaration):
             if design.directory_name in designs:
@@ -192,16 +207,23 @@ def scan_database(
             continue  # not a product directory; reported below if unmapped
         if relative in designs:
             design, adapter = designs[relative]
+            design = adapter.expand_design(design, directory)
+            designs[relative] = (design, adapter)
         else:
             adapter = _adapter_for(manifest["family"])
-            design = adapter.design_of_manifest(manifest)
+            design = adapter.design_of_manifest(manifest, directory)
             if design is None or design.directory_name != relative:
+                # registered products: the design is the product's own
+                # recorded part list
                 design = ProductDesign(
                     family=manifest["family"],
-                    collection=manifest["release"],
+                    collection=relative.split("/")[1],
                     label=manifest["label"],
                     kind="local_user_files",
-                    parts=(),
+                    parts=tuple(
+                        PartDesign(name=name, url=None)
+                        for name in (manifest.get("parts") or {})
+                    ),
                 )
         verdicts = tuple(
             adapter.classify_part(design, part, directory, manifest)

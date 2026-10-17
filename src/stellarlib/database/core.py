@@ -67,13 +67,28 @@ class Database:
         self,
         model: str,
         label: str | None = None,
+        collection: str | None = None,
+        **selection,
     ) -> SpectrumGrid:
         """Open one product as a grid.
 
         ``model`` is version-qualified (``"bosz/2024"``,
         ``"tlusty/OSTAR2002"``). When a release publishes several
-        products (several windows, several compositions), ``label`` picks
-        one; without ``label`` the choice must be unique.
+        products (BOSZ: one per metallicity directory, so the same
+        metallicity label exists in every broadening — pin both, e.g.
+        ``collection="r500", label="m+0.00"``; TLUSTY: one per vispec
+        tar, the release in ``model`` plus ``label`` suffices), the
+        product is picked by ``collection`` and/or ``label``; what
+        remains after pinning must be unique.
+
+        ``selection`` passes read-side options through to the family
+        reader. For BOSZ mirror products, which interleave every
+        composition and vmicro variant of every node, this is where the
+        grid's composition is chosen: ``am`` and ``cm`` (defaults 0,
+        solar-scaled) and ``vmicro`` (default the family policy: mp 1,
+        ms/ap 2 km/s) — a query over the mirror, never a fetch-side
+        subset. The wavelength sidecar is located across the database's
+        products and pinned automatically.
         """
         family, release = parse_model_spec(model)
         if release is None:
@@ -87,6 +102,17 @@ class Database:
                 f"database {self.root} holds no {family}/{release} product; "
                 f"present: {[repr(p) for p in self._products]}"
             )
+        if collection is not None:
+            candidates = tuple(
+                p for p in candidates
+                if p.directory.parent.name == collection
+            )
+            if not candidates:
+                raise ValueError(
+                    f"no product under collection {collection!r} for "
+                    f"{family}/{release}; available collections: "
+                    f"{sorted(p.directory.parent.name for p in self.products_for(family, release))}"
+                )
         if label is not None:
             candidates = tuple(p for p in candidates if p.label == label)
             if not candidates:
@@ -102,7 +128,32 @@ class Database:
             )
         record = candidates[0]
         directory = self._data_directory(record)
-        return SpectrumGrid.from_directory(family, directory)
+        options = dict(selection)
+        if family == "bosz" and "wave_path" not in options:
+            wave = self._bosz_wave_path(record)
+            if wave is not None:
+                options["wave_path"] = wave
+        return SpectrumGrid.from_directory(family, directory, **options)
+
+    def _bosz_wave_path(self, record: ProductRecord) -> Path | None:
+        """Locate the wavelength sidecar of one BOSZ product's resolution.
+
+        Mirror products hold no wave file of their own — the sidecars
+        mirror as their own upstream directory (``wavelength_grids``),
+        so the file is searched across the database's products: first
+        among physically present files, then among by-reference parts.
+        """
+        expected = f"bosz2024_wave_{record.directory.parent.name}.txt"
+        for hit in sorted(self.root.glob(f"*/*/*/{expected}")):
+            if hit.is_file():
+                return hit
+        for product in self._products:
+            entry = (product.manifest.get("parts") or {}).get(expected)
+            if entry and entry.get("path"):
+                candidate = Path(entry["path"])
+                if candidate.is_file():
+                    return candidate
+        return None
 
     def _data_directory(self, record: ProductRecord) -> Path:
         """Where a product's data files live.

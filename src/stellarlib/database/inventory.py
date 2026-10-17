@@ -55,9 +55,10 @@ def refresh_inventory(root: Path) -> None:
         "Each `<family>/<collection>/<label>` directory is one product: its "
         "data files and a MANIFEST.json recording every part's source URL "
         "(where fetched), sha256, size, retrieval time, and the literature "
-        "to cite. The design (design.json) declares what the database is "
-        "meant to hold; build_database fetches missing parts on demand and "
-        "db_status.md reports the two-state scan against that design.",
+        "to cite. The blueprint (design.json) is a local record of the "
+        "complete upstream library — whole official packages only; "
+        "build_database completes what is missing and db_status.md reports "
+        "the two-state scan against that blueprint.",
         "",
         "```python",
         "import stellarlib",

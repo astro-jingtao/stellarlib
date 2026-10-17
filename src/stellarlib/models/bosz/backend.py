@@ -129,14 +129,25 @@ def _discover_wave_path(
     return matching[0]
 
 
-def read_bosz(sources, wave_path: str | os.PathLike | None = None) -> SpectrumSet:
+def read_bosz(
+    sources,
+    wave_path: str | os.PathLike | None = None,
+    am: float = 0.0,
+    cm: float = 0.0,
+    vmicro: int | None = None,
+) -> SpectrumSet:
     """Read BOSZ 2024 resam spectra (directory or file list) into a set.
 
-    One set holds one (resolution, [a/M], [C/M]) combination — mixed values
-    are refused loudly. The microturbulence may legitimately differ across
-    atmosphere families within one set (mp: 1 km/s; ms/ap: 2 km/s); the
-    set-level parameter then reports the mixed state and each node's facts
-    carry its own value.
+    One set holds one (resolution, [a/M], [C/M]) combination. A mirror
+    directory interleaves every composition and vmicro variant of every
+    node, so reading one is a selection, not an error: ``am``/``cm``
+    (defaults 0, solar-scaled) pick the composition, and ``vmicro``
+    (default ``None``: the atmosphere-family policy — mp 1, ms/ap 2
+    km/s) picks each node's variant. The selection is recorded in the
+    set notes (total files, selected files, policy). Explicitly curated
+    sources that hold exactly one composition read identically with the
+    defaults. With ``vmicro`` given, every node uses that value (a node
+    whose file is absent is a hole, reported by the grid).
     """
     files, base = _collect_sources(sources)
     spectrum_files = [f for f in files if recognize_bosz(f)]
@@ -144,11 +155,40 @@ def read_bosz(sources, wave_path: str | os.PathLike | None = None) -> SpectrumSe
         raise UnrecognizedFormatError(
             f"no BOSZ 2024 resam files found among {base}"
         )
-    all_facts = []
+    from stellarlib.models.bosz.design import family_for
+
+    parsed = []
     for f in spectrum_files:
         facts = parse_filename(f.name)
         facts["_path"] = f
-        all_facts.append(facts)
+        parsed.append(facts)
+
+    total = len(parsed)
+    am = round(float(am), 2)
+    cm = round(float(cm), 2)
+    selected = [f for f in parsed if f["am"] == am and f["cm"] == cm]
+    if not selected:
+        available_am = sorted({f["am"] for f in parsed})
+        available_cm = sorted({f["cm"] for f in parsed})
+        raise ValueError(
+            f"no spectra at [a/M] = {am:+.2f}, [C/M] = {cm:+.2f} among the "
+            f"{total} files of {base}; available [a/M] {available_am}, "
+            f"[C/M] {available_cm} — pass am=/cm= to choose a composition"
+        )
+    if vmicro is None:
+        kept = [
+            f for f in selected
+            if f["vmicro"] == family_for(int(f["teff"]), float(f["logg"]))[1]
+        ]
+    else:
+        kept = [f for f in selected if f["vmicro"] == int(vmicro)]
+    if not kept:
+        raise ValueError(
+            f"no spectra at [a/M] = {am:+.2f}, [C/M] = {cm:+.2f} with the "
+            f"requested vmicro selection among the {total} files of {base}"
+        )
+    all_facts = kept
+    vmicro_policy = "family" if vmicro is None else int(vmicro)
 
     def _single(key: str) -> object:
         values = sorted({facts[key] for facts in all_facts})
@@ -160,8 +200,6 @@ def read_bosz(sources, wave_path: str | os.PathLike | None = None) -> SpectrumSe
         return values[0]
 
     resolution = _single("resolution")
-    am = _single("am")
-    cm = _single("cm")
     vmicro_values = sorted({facts["vmicro"] for facts in all_facts})
     vmicro = vmicro_values[0] if len(vmicro_values) == 1 else None
 
@@ -267,6 +305,13 @@ def read_bosz(sources, wave_path: str | os.PathLike | None = None) -> SpectrumSe
         notes={
             "wave_file": str(wave_file),
             "wave_rows": int(wave.size),
+            "selection": {
+                "am": am,
+                "cm": cm,
+                "vmicro": vmicro_policy,
+                "files_total": total,
+                "files_selected": len(all_facts),
+            },
             "backend_notes": list(backend_notes("bosz")),
         },
     )

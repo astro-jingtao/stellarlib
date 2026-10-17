@@ -4,23 +4,24 @@ Layout (``database/`` package — generic management core, per-family
 adapters under ``models/<family>/design.py``)::
 
     <database>/
-        design.json                # the declared target: fetchable windows
+        design.json                # the blueprint: the full upstream library
         database.json              # inventory of every product (regenerated)
         README.md                  # human summary (regenerated)
         unified-parameters.md      # mapping documentation snapshot
         db_status.md / .json       # two-state scan report (regenerated)
         <family>/<collection>/<label>/
             MANIFEST.json          # parts, checksums, identity, format
-            <data files>           # resam/vis spectra + wavelength grids
+            <data files>           # whole official packages: directory
+                                   # mirrors (with their upstream bulk
+                                   # manifest) or verbatim archive files
 
 Concepts (mirroring the unified database architecture): a **Product** is
-one directory holding one coherent set of files plus its MANIFEST; a
+one directory holding one whole official package plus its MANIFEST; a
 **Part** is one file, the unit of fetching and two-state judgment; the
-**Design** is the declared target — the complete set of products and
-parts the database is meant to hold; the **Scanner** classifies every
-designed part (ok / missing / nonconforming) into a two-state product
-report (complete / incomplete); the **Builder** fetches missing parts
-through the family adapter and never touches nonconforming ones. Fetching
-is on demand: the design is complete, what is actually downloaded is the
-user's choice (``dry_run`` first, then per-window builds).
+**Blueprint** is a local record of the complete upstream library — every
+family it names is held in full, as whole upstream units, never a
+subset; the **Scanner** classifies every designed part (ok / missing /
+nonconforming) into a two-state product report (complete / incomplete);
+the **Builder** fetches missing parts through the family adapter and
+never touches nonconforming ones.
 """

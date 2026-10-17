@@ -1,10 +1,13 @@
 """Design protocol: products, parts, verdicts, and the family adapter.
 
 The design is the authoritative statement of "what the database is meant
-to hold". It is split by ownership exactly like the registry: this module
+to hold": the blueprint — a local record of the complete upstream
+library. It is split by ownership exactly like the registry: this module
 defines the generic protocol and the generic part classification; each
-family's adapter (``models/<family>/design.py``) enumerates its designs
-from the database's declared windows and implements fetching.
+family's adapter (``models/<family>/design.py``) enumerates the upstream
+publishing units (whole official packages — directory mirrors or archive
+files, never subsets) and implements fetching at exactly the granularity
+the source publishes.
 """
 
 from __future__ import annotations
@@ -30,12 +33,12 @@ class PartDesign:
     """One file the design declares: a filename within its product.
 
     ``url`` is where the file is fetched from; ``None`` marks a
-    local-only part (no official per-file channel exists).
+    local-only part (no official channel exists).
     """
 
     name: str
     url: str | None = None
-    role: str = "spectrum"  # "spectrum" | "wavelength_grid" | ...
+    role: str = "spectrum"  # "spectrum" | "bulk_manifest" | "wavelength_grid" | "archive"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -45,7 +48,7 @@ class ProductDesign:
     family: str
     collection: str  # directory level 2: bosz "r500"; tlusty "OSTAR2002"
     label: str
-    kind: str  # "official_window" | "local_user_files"
+    kind: str  # "official_mirror" | "local_user_files"
     parts: tuple[PartDesign, ...]
     facts: Mapping[str, object] = dataclasses.field(default_factory=dict)
 
@@ -120,12 +123,22 @@ class FamilyAdapter(Protocol):
     family: str
 
     def designs(self, declaration: Mapping) -> Iterable[ProductDesign]:
-        """Enumerate the declared products (from the database's
-        ``design.json`` window declarations)."""
+        """Enumerate the declared products for one blueprint entry (a
+        ``{"family": ...}`` declaration) — the family's complete
+        upstream publishing surface, whole units only."""
+        ...
+
+    def expand_design(
+        self, design: ProductDesign, directory: Path
+    ) -> ProductDesign:
+        """Replace a phase-1 design with the full part list once the
+        product directory holds the upstream manifest part (a BOSZ
+        bulkdl script). Families whose units are single files return
+        the design unchanged."""
         ...
 
     def design_of_manifest(
-        self, manifest: Mapping
+        self, manifest: Mapping, directory: Path
     ) -> ProductDesign | None:
         """The design a manifest describes (for registered products)."""
         ...

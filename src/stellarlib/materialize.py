@@ -56,7 +56,7 @@ def materialize_grid(
         ]
         raise GridHoleError(
             f"cannot materialize a grid with holes ({len(grid.holes)} "
-            f"missing nodes, e.g. {holes}); select a hole-free window or "
+            f"missing nodes, e.g. {holes}); select a hole-free grid or "
             "interpolate per query instead"
         )
 

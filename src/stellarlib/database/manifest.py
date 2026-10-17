@@ -2,9 +2,9 @@
 
 Every product directory carries one MANIFEST describing its parts (the
 files), their checksums and sources, the identity triplet, and a family
-section carrying the window declaration. Only relative paths are stored
-for copied products; reference-registered local products record absolute
-paths and say so.
+section carrying the mirror declaration (which upstream unit this
+product holds). Only relative paths are stored for copied products;
+reference-registered local products record absolute paths and say so.
 """
 
 from __future__ import annotations
