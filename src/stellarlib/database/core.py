@@ -1,0 +1,146 @@
+"""Database and open_database: the read-side facade over one database root."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+
+from stellarlib.database.manifest import read_manifest
+from stellarlib.grid import SpectrumGrid
+from stellarlib.models import parse_model_spec
+
+__all__ = ["Database", "ProductRecord", "open_database"]
+
+
+@dataclass(frozen=True)
+class ProductRecord:
+    """One product directory inside a database, described by its MANIFEST."""
+
+    directory: Path
+    manifest: dict
+
+    @property
+    def family(self) -> str:
+        return self.manifest["family"]
+
+    @property
+    def release(self) -> str:
+        return self.manifest["release"]
+
+    @property
+    def label(self) -> str:
+        return self.manifest["label"]
+
+    def __repr__(self) -> str:  # pragma: no cover - debug convenience
+        return f"ProductRecord({self.family}/{self.release}/{self.label})"
+
+
+class Database:
+    """An opened local database: the products present under one root."""
+
+    def __init__(self, root: Path):
+        self.root = Path(root)
+        if not self.root.is_dir():
+            raise NotADirectoryError(
+                f"{self.root} is not a database directory; build one first "
+                "with stellarlib.build_database(database=...)"
+            )
+        self._products = tuple(
+            ProductRecord(directory=manifest.parent, manifest=read_manifest(manifest.parent))
+            for manifest in sorted(self.root.glob("*/*/*/MANIFEST.json"))
+        )
+
+    @property
+    def products(self) -> tuple[ProductRecord, ...]:
+        return self._products
+
+    def products_for(
+        self, family: str, release: str | None = None
+    ) -> tuple[ProductRecord, ...]:
+        return tuple(
+            p
+            for p in self._products
+            if p.family == family and (release is None or p.release == release)
+        )
+
+    def grid(
+        self,
+        model: str,
+        label: str | None = None,
+    ) -> SpectrumGrid:
+        """Open one product as a grid.
+
+        ``model`` is version-qualified (``"bosz/2024"``,
+        ``"tlusty/OSTAR2002"``). When a release publishes several
+        products (several windows, several compositions), ``label`` picks
+        one; without ``label`` the choice must be unique.
+        """
+        family, release = parse_model_spec(model)
+        if release is None:
+            raise ValueError(
+                f"model must be version-qualified, e.g. 'bosz/2024'; "
+                f"got {model!r}"
+            )
+        candidates = self.products_for(family, release)
+        if not candidates:
+            raise ValueError(
+                f"database {self.root} holds no {family}/{release} product; "
+                f"present: {[repr(p) for p in self._products]}"
+            )
+        if label is not None:
+            candidates = tuple(p for p in candidates if p.label == label)
+            if not candidates:
+                raise ValueError(
+                    f"no product labeled {label!r} for {family}/{release}; "
+                    f"available: "
+                    f"{[p.label for p in self.products_for(family, release)]}"
+                )
+        if len(candidates) > 1:
+            raise ValueError(
+                f"{family}/{release} has {len(candidates)} products; pin one "
+                f"of {[p.label for p in candidates]} with label="
+            )
+        record = candidates[0]
+        directory = self._data_directory(record)
+        return SpectrumGrid.from_directory(family, directory)
+
+    def _data_directory(self, record: ProductRecord) -> Path:
+        """Where a product's data files live.
+
+        Copied and fetched products keep their files in the product
+        directory. Reference-registered products record the original
+        directory of their files; the files never move.
+        """
+        if record.manifest.get("by_reference"):
+            sources = sorted(
+                {
+                    Path(entry["path"]).parent
+                    for entry in record.manifest["parts"].values()
+                    if entry.get("path")
+                }
+            )
+            if len(sources) != 1:
+                raise ValueError(
+                    f"reference product {record!r} spans several source "
+                    f"directories: {[str(s) for s in sources]}"
+                )
+            return sources[0]
+        return record.directory
+
+    def describe(self) -> str:
+        lines = [
+            f"stellarlib database at {self.root}",
+            f"products: {len(self._products)}",
+        ]
+        for p in self._products:
+            n_parts = len(p.manifest.get("parts", {}))
+            lines.append(
+                f"  {p.family}/{p.release}/{p.label} "
+                f"({n_parts} parts, {p.manifest.get('kind')})"
+            )
+        return "\n".join(lines)
+
+
+def open_database(database: str | Path) -> Database:
+    """Open a local database built by ``build_database`` (or a partial copy)."""
+    return Database(Path(database))

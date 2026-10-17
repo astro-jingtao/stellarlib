@@ -1,0 +1,101 @@
+"""Root-level derived files: database.json, README, doc snapshots.
+
+Everything here is regenerated from the directory contents alone — never
+copied between machines, never merged.
+"""
+
+from __future__ import annotations
+
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+
+from stellarlib.database.core import Database
+from stellarlib.database.scan import scan_database, write_status
+
+__all__ = ["refresh_inventory"]
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def refresh_inventory(root: Path) -> None:
+    """Regenerate database.json, README.md, doc snapshot, and db_status."""
+    from stellarlib import __version__
+    from stellarlib.registry.docs import render_documentation
+
+    root = Path(root)
+    products = Database(root).products
+    inventory = {
+        "stellarlib_version": __version__,
+        "generated_at": _now_iso(),
+        "products": [
+            {
+                "family": p.family,
+                "release": p.release,
+                "label": p.label,
+                "kind": p.manifest.get("kind"),
+                "n_parts": len(p.manifest.get("parts", {})),
+                "size_bytes": sum(
+                    (entry or {}).get("size_bytes") or 0
+                    for entry in p.manifest.get("parts", {}).values()
+                ),
+            }
+            for p in products
+        ],
+    }
+    _atomic_write_json(root / "database.json", inventory)
+
+    lines = [
+        "# stellarlib spectral-library database",
+        "",
+        f"Built by stellarlib {__version__} on {inventory['generated_at']}.",
+        "",
+        "Each `<family>/<collection>/<label>` directory is one product: its "
+        "data files and a MANIFEST.json recording every part's source URL "
+        "(where fetched), sha256, size, retrieval time, and the literature "
+        "to cite. The design (design.json) declares what the database is "
+        "meant to hold; build_database fetches missing parts on demand and "
+        "db_status.md reports the two-state scan against that design.",
+        "",
+        "```python",
+        "import stellarlib",
+        f"db = stellarlib.open_database({str(root)!r})",
+        "grid = db.grid('bosz/2024', label='...')",
+        "```",
+        "",
+        "## Products",
+        "",
+        "| Product | Kind | Parts | Size (bytes) |",
+        "|---|---|---|---|",
+    ]
+    for p in products:
+        parts = p.manifest.get("parts", {})
+        size = sum((entry or {}).get("size_bytes") or 0 for entry in parts.values())
+        lines.append(
+            f"| `{p.family}/{p.release}/{p.label}` | {p.manifest.get('kind')} "
+            f"| {len(parts)} | {size:,} |"
+        )
+    lines += ["", "## Citations", ""]
+    seen = set()
+    for p in products:
+        for citation in p.manifest.get("references", []):
+            if citation not in seen:
+                seen.add(citation)
+                lines.append(f"- {citation}")
+    (root / "README.md").write_text(
+        "\n".join(lines) + "\n", encoding="utf-8", newline="\n"
+    )
+    (root / "unified-parameters.md").write_text(
+        render_documentation(), encoding="utf-8", newline="\n"
+    )
+    write_status(scan_database(root))
+
+
+def _atomic_write_json(path: Path, payload: dict) -> None:
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(
+        json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8", newline="\n"
+    )
+    tmp.replace(path)

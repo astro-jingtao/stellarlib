@@ -8,6 +8,8 @@ on (Teff, log g, [M/H], ...) parameter grids.
 __version__ = "0.1.0"
 
 from stellarlib.core import FieldSpec, ModelIdentity, ParameterRole, ParameterSpec
+from stellarlib.database.build import build_database, register_local_product
+from stellarlib.database.core import Database, open_database
 from stellarlib.exceptions import StellarLibError
 from stellarlib.facade import BoszSpectra, TlustySpectra, UnifiedSpectra, construct
 from stellarlib.grid import SpectrumGrid, open_grid
@@ -56,6 +58,10 @@ __all__ = [
     "UnifiedSpectra",
     "BoszSpectra",
     "TlustySpectra",
+    "build_database",
+    "open_database",
+    "Database",
+    "register_local_product",
     # interpolation
     "InterpolationRecord",
     "corner_weights",

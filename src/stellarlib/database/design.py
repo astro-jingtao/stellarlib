@@ -1,0 +1,166 @@
+"""Design protocol: products, parts, verdicts, and the family adapter.
+
+The design is the authoritative statement of "what the database is meant
+to hold". It is split by ownership exactly like the registry: this module
+defines the generic protocol and the generic part classification; each
+family's adapter (``models/<family>/design.py``) enumerates its designs
+from the database's declared windows and implements fetching.
+"""
+
+from __future__ import annotations
+
+import dataclasses
+from pathlib import Path
+from typing import Iterable, Mapping, Protocol
+
+from stellarlib.integrity import sha256_file
+
+__all__ = [
+    "PartDesign",
+    "ProductDesign",
+    "PartVerdict",
+    "VerdictKind",
+    "FamilyAdapter",
+    "classify_part_generic",
+]
+
+
+@dataclasses.dataclass(frozen=True)
+class PartDesign:
+    """One file the design declares: a filename within its product.
+
+    ``url`` is where the file is fetched from; ``None`` marks a
+    local-only part (no official per-file channel exists).
+    """
+
+    name: str
+    url: str | None = None
+    role: str = "spectrum"  # "spectrum" | "wavelength_grid" | ...
+
+
+@dataclasses.dataclass(frozen=True)
+class ProductDesign:
+    """One declared product directory and its designed parts."""
+
+    family: str
+    collection: str  # directory level 2: bosz "r500"; tlusty "OSTAR2002"
+    label: str
+    kind: str  # "official_window" | "local_user_files"
+    parts: tuple[PartDesign, ...]
+    facts: Mapping[str, object] = dataclasses.field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "parts", tuple(self.parts))
+        object.__setattr__(self, "facts", dict(self.facts))
+
+    @property
+    def directory_name(self) -> str:
+        return f"{self.family}/{self.collection}/{self.label}"
+
+
+class VerdictKind:
+    OK = "ok"
+    MISSING = "missing"
+    NONCONFORMING = "nonconforming"
+
+
+@dataclasses.dataclass(frozen=True)
+class PartVerdict:
+    """The two-state judgment of one designed part."""
+
+    part: str
+    kind: str  # VerdictKind
+    reasons: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "reasons", tuple(self.reasons))
+
+    @property
+    def summary(self) -> str:
+        if self.kind == VerdictKind.OK:
+            return "ok"
+        detail = "; ".join(self.reasons)
+        return f"{self.kind} ({detail})" if detail else self.kind
+
+
+def classify_part_generic(
+    design: ProductDesign,
+    part: PartDesign,
+    directory: Path,
+    manifest: Mapping,
+) -> PartVerdict:
+    """The generic part classification, shared by every family.
+
+    missing: the file is absent. nonconforming: present but its sha256
+    disagrees with the recorded one (integrity), or the file exists but
+    the manifest records it as unavailable-upstream (a design member the
+    upstream does not publish — a hole, kept visible for human decision).
+    ok: present and matching.
+    """
+    path = directory / part.name
+    recorded = (manifest.get("parts") or {}).get(part.name)
+    if not path.exists():
+        if recorded and recorded.get("unavailable_upstream"):
+            return PartVerdict(
+                part=part.name,
+                kind=VerdictKind.NONCONFORMING,
+                reasons=(
+                    "declared by the design but the upstream answers "
+                    f"{recorded.get('http_status', 'error')} — unpublished "
+                    "model (a grid hole); human decision whether to keep "
+                    "designing it",
+                ),
+            )
+        return PartVerdict(part=part.name, kind=VerdictKind.MISSING)
+    expected = (recorded or {}).get("sha256")
+    if expected is None:
+        return PartVerdict(part=part.name, kind=VerdictKind.OK)
+    actual = sha256_file(path)
+    if actual.lower() != str(expected).lower():
+        return PartVerdict(
+            part=part.name,
+            kind=VerdictKind.NONCONFORMING,
+            reasons=(f"integrity: sha256 {actual} != recorded {expected}",),
+        )
+    return PartVerdict(part=part.name, kind=VerdictKind.OK)
+
+
+class FamilyAdapter(Protocol):
+    """What a family contributes to the generic database machinery."""
+
+    family: str
+
+    def designs(self, declaration: Mapping) -> Iterable[ProductDesign]:
+        """Enumerate the declared products (from the database's
+        ``design.json`` window declarations)."""
+        ...
+
+    def design_of_manifest(
+        self, manifest: Mapping
+    ) -> ProductDesign | None:
+        """The design a manifest describes (for registered products)."""
+        ...
+
+    def classify_part(
+        self, design: ProductDesign, part: PartDesign, directory: Path,
+        manifest: Mapping,
+    ) -> PartVerdict:
+        ...
+
+    def fetch_part(
+        self,
+        design: ProductDesign,
+        part: PartDesign,
+        directory: Path,
+        *,
+        session=None,
+        log=print,
+    ) -> Mapping:
+        """Fetch one missing part; returns its manifest parts entry.
+
+        Raises :class:`~stellarlib.exceptions.SourceUnavailableError` for
+        parts with no fetchable channel. A 404 from the upstream records
+        an ``unavailable_upstream`` entry (the design's rectangle has a
+        hole there) instead of failing the whole build.
+        """
+        ...
