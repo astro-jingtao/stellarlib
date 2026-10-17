@@ -137,9 +137,12 @@ demand. The **Scanner** judges every part (`ok` / `missing` /
 `nonconforming`, products `complete` / `incomplete`); the **Builder**
 fetches only what is missing and never completes a product that holds
 nonconforming parts (a checksum proves integrity, not design
-membership). An upstream 404 records the point as an unpublished hole —
-visible in `db_status`, a human decision — instead of aborting the
-window. Everything at the root (`database.json`, `README.md`,
+membership). An upstream 404 is recorded as a failed fetch attempt
+(status, url, time in the MANIFEST) — the part stays missing, shows in
+`db_status`, and is retried on the next build; no publication claim is
+inferred from an HTTP status (unpublished nodes are known only through
+the confirmed family-policy constants and the holes computed from the
+files actually held). Everything at the root (`database.json`, `README.md`,
 `unified-parameters.md`, `db_status.*`) is regenerated from directory
 contents alone, never copied between machines.
 

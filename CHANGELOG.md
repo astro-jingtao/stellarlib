@@ -25,8 +25,10 @@ Initial release.
   refusal, kind-17 skipping) with synthetic format-equivalent fixtures.
 - Local database implementing the design/two-state architecture:
   declared windows, per-part ok/missing/nonconforming scan, on-demand
-  checksummed fetching, upstream-404 holes, `register_local_product`
-  (copy or by-reference), regenerated root inventory.
+  checksummed fetching (a 404 is recorded as a failed fetch and
+  retried on the next build — no publication claim inferred),
+  `register_local_product` (copy or by-reference), regenerated root
+  inventory.
 - Materialized array side-products with a sources sidecar and
   gone/changed source detection.
 - Physics validation tool (Boltzmann closure, 4π convention, wavelength

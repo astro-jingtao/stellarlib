@@ -71,8 +71,11 @@ vmicro 1 km/s), `ms` (MARCS spherical, log g ≤ 3, vmicro 2), `ap`
 unpublished). Log g strictly between 3 and 3.5 has no family (the
 published grids step over the seam; the paper bounds MARCS↔ATLAS9 seam
 errors at ≲0.5% optical, 5–10% at 3500–4000 K). The window design's
-family policy implements exactly this assignment; a fetch 404 records
-the point as an unpublished hole.
+family policy implements exactly this assignment — these constants, not
+anything observed over HTTP, are the only place publication knowledge is
+encoded. A fetch 404 is recorded as a failed fetch attempt (status, url,
+time in the MANIFEST; the part stays missing and is retried on the next
+build); no publication claim is ever inferred from an HTTP status.
 
 ### Coverage truth (verified 2026-10-09 on MAST, by the downstream project)
 

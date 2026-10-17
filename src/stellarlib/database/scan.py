@@ -3,7 +3,7 @@
 Every designed product is judged complete (all parts ok) or incomplete
 (any part missing or nonconforming, with per-part verdicts and reasons).
 Missing parts are the builder's automatic work; nonconforming parts
-(integrity failures, upstream-unpublished holes) never are — the report
+(integrity failures) never are — the report
 lists them for human decision. Directories that map to no design are
 reported as unregistered, never silently adopted.
 """

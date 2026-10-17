@@ -7,8 +7,10 @@ policy proven downstream (ms for log g <= 3, vmicro 2; mp for log g >=
 3.5 and Teff <= 8000 K, vmicro 1; ap for Teff >= 8250 K and for
 7500-8000 K where mp is unavailable, vmicro 2), plus the per-resolution
 wavelength grid. Fetching is per-file HTTP from the verified MAST tree; a
-404 marks the point as an upstream-unpublished hole instead of failing
-the build.
+404 is recorded as a failed fetch attempt — the part stays missing and
+is retried on the next build. No publication status is inferred from an
+HTTP status; unpublished nodes are known only through the confirmed
+family policy constants (family_for) at design time.
 """
 
 from __future__ import annotations
@@ -177,11 +179,11 @@ class BoszAdapter:
             tmp = target.with_suffix(target.suffix + ".part")
             response = session.get(part.url, stream=True, timeout=_TIMEOUT_GET)
             if response.status_code == 404:
-                log(f"  404 {part.name} (upstream-unpublished point)")
+                log(f"  404 {part.name} (fetch failed; part stays missing)")
                 return {
                     "file": part.name,
-                    "unavailable_upstream": True,
                     "http_status": 404,
+                    "error": "not found",
                     "url": part.url,
                     "attempted_at": _now_iso(),
                 }

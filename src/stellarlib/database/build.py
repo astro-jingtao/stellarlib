@@ -3,8 +3,9 @@
 The builder completes what the design declares and what is missing — one
 file per part, checksummed on arrival. Products containing nonconforming
 parts are never touched (a checksum pass proves completeness, not design
-membership); upstream-unpublished points are recorded as holes, not
-fetched around. ``dry_run=True`` reports the plan without touching the
+membership); a failed fetch (e.g. an HTTP 404) is recorded as exactly
+that failed attempt and the part stays missing — the next build retries
+it. ``dry_run=True`` reports the plan without touching the
 disk. Registration admits locally held files as products — copied in by
 default (self-contained, portable), or referenced in place for sets that
 already live where their project wants them.

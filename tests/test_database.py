@@ -1,9 +1,9 @@
 """Tests for the database package: design, manifest, scan, build, register.
 
 The build tests run offline against a fake HTTP session serving the real
-fixture bytes, so the fetch path (streaming sha256, 404 holes, keep
-verified, nonconforming products never completed) is exercised without
-the network.
+fixture bytes, so the fetch path (streaming sha256, 404 fetch errors,
+keep verified, nonconforming products never completed) is exercised
+without the network.
 """
 
 from __future__ import annotations
@@ -180,9 +180,11 @@ class TestScan:
                 "sha256": "0" * 64,
             },
             NODE_NAMES[2]: {
+                # a recorded failed fetch: an HTTP status is a fact
+                # about one attempt, never a publication claim
                 "file": NODE_NAMES[2],
-                "unavailable_upstream": True,
                 "http_status": 404,
+                "error": "not found",
             },
         }
         write_manifest(directory, manifest)
@@ -193,10 +195,10 @@ class TestScan:
         kinds = {v.part: v.kind for v in product.verdicts}
         assert kinds[good] == VerdictKind.OK
         assert kinds[NODE_NAMES[1]] == VerdictKind.NONCONFORMING
-        assert kinds[NODE_NAMES[2]] == VerdictKind.NONCONFORMING
+        assert kinds[NODE_NAMES[2]] == VerdictKind.MISSING
         assert kinds[NODE_NAMES[3]] == VerdictKind.MISSING
-        assert report.missing_part_count() >= 1
-        assert len(report.nonconforming_parts()) == 2
+        assert report.missing_part_count() >= 2
+        assert len(report.nonconforming_parts()) == 1
 
     def test_designed_but_absent_product_reports_all_missing(self, tmp_path):
         report = scan_database(tmp_path, declarations=[dict(WINDOW)])
@@ -252,10 +254,13 @@ class TestBuild:
         build_database(tmp_path, session=session2)
         assert session2.calls == []
 
-    def test_404_records_hole_and_blocks_rebuild(self, tmp_path):
+    def test_404_records_fetch_error_and_retries(self, tmp_path):
         session = _fixture_session()
         build_database(tmp_path, declarations=[dict(WINDOW)], session=session)
         # new declaration adds a point the fake upstream does not serve
+        from stellarlib.models.bosz.design import bosz_filename
+
+        missing_name = bosz_filename(3500, 1.0, -0.5, 0.0, 0.0, 500)
         holed = dict(
             WINDOW,
             label="holed",
@@ -267,25 +272,29 @@ class TestBuild:
         build_database(tmp_path, declarations=[dict(holed)], session=session2)
         directory = tmp_path / "bosz" / "r500" / "holed"
         manifest = read_manifest(directory)
-        hole_entry = next(
-            v
-            for k, v in manifest["parts"].items()
-            if v.get("unavailable_upstream")
-        )
-        assert hole_entry["http_status"] == 404
-        # scan reports the hole as nonconforming (human decision), and a
-        # rebuild refuses to complete that product further
+        entry = manifest["parts"][missing_name]
+        assert entry["http_status"] == 404
+        assert "unavailable_upstream" not in entry
+        assert "sha256" not in entry
+        assert not (directory / missing_name).exists()
+        # scan reports the part as missing (the builder's automatic
+        # work); no nonconforming verdict is invented from the 404
         report = scan_database(tmp_path)
         holed_report = next(
             p for p in report.products if p.design.label == "holed"
         )
         assert holed_report.state == "incomplete"
-        assert any(
-            v.kind == VerdictKind.NONCONFORMING for v in holed_report.verdicts
-        )
+        kinds = {v.part: v.kind for v in holed_report.verdicts}
+        assert kinds[missing_name] == VerdictKind.MISSING
+        assert all(v.kind != VerdictKind.NONCONFORMING for v in holed_report.verdicts)
+        # a rebuild retries the failed part — a 404 says nothing about
+        # whether the upstream will serve it tomorrow
         session3 = _fixture_session()
         build_database(tmp_path, session=session3)
-        assert session3.calls == []
+        assert (
+            "https://archive.stsci.edu/hlsps/bosz/bosz2024/r500/"
+            f"m-0.50/{missing_name}" in session3.calls
+        )
 
 
 class TestRegisterLocalProduct:

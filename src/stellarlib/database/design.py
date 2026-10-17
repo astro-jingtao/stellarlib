@@ -91,26 +91,15 @@ def classify_part_generic(
 ) -> PartVerdict:
     """The generic part classification, shared by every family.
 
-    missing: the file is absent. nonconforming: present but its sha256
-    disagrees with the recorded one (integrity), or the file exists but
-    the manifest records it as unavailable-upstream (a design member the
-    upstream does not publish — a hole, kept visible for human decision).
-    ok: present and matching.
+    missing: the file is absent (a recorded failed fetch keeps the part
+    missing — nothing is inferred from an HTTP status, and the builder
+    retries it on the next run). nonconforming: present but its sha256
+    disagrees with the recorded one (integrity). ok: present and
+    matching.
     """
     path = directory / part.name
     recorded = (manifest.get("parts") or {}).get(part.name)
     if not path.exists():
-        if recorded and recorded.get("unavailable_upstream"):
-            return PartVerdict(
-                part=part.name,
-                kind=VerdictKind.NONCONFORMING,
-                reasons=(
-                    "declared by the design but the upstream answers "
-                    f"{recorded.get('http_status', 'error')} — unpublished "
-                    "model (a grid hole); human decision whether to keep "
-                    "designing it",
-                ),
-            )
         return PartVerdict(part=part.name, kind=VerdictKind.MISSING)
     expected = (recorded or {}).get("sha256")
     if expected is None:
@@ -160,7 +149,8 @@ class FamilyAdapter(Protocol):
 
         Raises :class:`~stellarlib.exceptions.SourceUnavailableError` for
         parts with no fetchable channel. A 404 from the upstream records
-        an ``unavailable_upstream`` entry (the design's rectangle has a
-        hole there) instead of failing the whole build.
+        the failed attempt (status, url, time) and leaves the part
+        missing — a failed fetch is never promoted to a claim about what
+        the upstream publishes.
         """
         ...
