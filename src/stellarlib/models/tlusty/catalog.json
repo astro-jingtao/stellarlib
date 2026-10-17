@@ -2,35 +2,52 @@
   "schema_version": 1,
   "family": "tlusty",
   "release": "OSTAR2002/BSTAR2006",
-  "description": "TLUSTY NLTE model atmosphere grids with SYNSPEC optical spectra, distributed at tlusty.oca.eu as per-composition tar archives of per-atmosphere files. The exact tar inventory (archive names, sizes) still requires live verification; the per-file format facts below are verified against downloads (2026-10-09, downstream projects).",
-  "base_url": "https://tlusty.oca.eu/",
-  "products": {
-    "ostar2002": {
-      "release": "OSTAR2002",
-      "teff_span_K": [27500, 55000],
-      "teff_step_K": 2500,
-      "logg_span": [3.0, 4.75],
-      "logg_step": 0.25,
-      "compositions": "10 scaled-solar values of Z/Z_sun from 0 to 2",
-      "note": "the published set narrows at the hottest models",
-      "reference": "Lanz & Hubeny 2003, ApJS 146, 417"
-    },
-    "bstar2006": {
-      "release": "BSTAR2006",
-      "teff_span_K": [15000, 30000],
-      "teff_step_K": 1000,
-      "logg_span": [1.75, 4.75],
-      "logg_step": 0.25,
-      "compositions": "5 scaled-solar values",
-      "note": "the published set narrows at the hottest models",
-      "reference": "Lanz & Hubeny 2007, ApJS 169, 83"
-    }
-  },
+  "description": "TLUSTY NLTE model atmosphere grids with SYNSPEC optical spectra, distributed at tlusty.oca.eu as per-composition vispec tar archives. Each tar is the upstream publishing unit and holds BOTH kinds of every atmosphere of its composition: kind 7 (detailed spectrum) and kind 17 (continuum) — one model's two data, always held together. The complete tar inventory below is live-verified (2026-10-18); the blueprint declares all 20 tars.",
+  "base_url": "https://tlusty.oca.eu/tlusty/Tlusty2002",
+  "url_template": "{base_url}/database/{archive}",
   "verified": {
-    "date": "2026-10-09",
+    "date": "2026-10-18",
+    "tar_inventory": {
+      "verified": "inventory pages fetched live 2026-10-18 (OS02-VIspec.html, BS06-VIspec.html); every archive HEAD-checked 200 (Gvispec.tar and BGvispec_v2.tar fully downloaded and inspected); sizes below are the pages' published sizes",
+      "ostar2002": {
+        "vmicro_km_s": 1,
+        "members_per_tar": "138 (69 kind-7 + 69 kind-17, flat)",
+        "tars": {
+          "C": {"z_over_zsun": 2.0, "archive": "Cvispec.tar", "size_mb": 90},
+          "G": {"z_over_zsun": 1.0, "archive": "Gvispec.tar", "size_mb": 90},
+          "L": {"z_over_zsun": 0.5, "archive": "Lvispec.tar", "size_mb": 89},
+          "S": {"z_over_zsun": 0.2, "archive": "Svispec.tar", "size_mb": 89},
+          "T": {"z_over_zsun": 0.1, "archive": "Tvispec.tar", "size_mb": 89},
+          "V": {"z_over_zsun": 0.0333, "archive": "Vvispec.tar", "size_mb": 88},
+          "W": {"z_over_zsun": 0.02, "archive": "Wvispec.tar", "size_mb": 88},
+          "X": {"z_over_zsun": 0.01, "archive": "Xvispec.tar", "size_mb": 88},
+          "Y": {"z_over_zsun": 0.001, "archive": "Yvispec.tar", "size_mb": 88},
+          "Z": {"z_over_zsun": 0.0, "archive": "Zvispec.tar", "size_mb": 87}
+        }
+      },
+      "bstar2006": {
+        "members_per_tar": "two files per atmosphere, both kinds",
+        "tars": {
+          "BC_v2": {"z_over_zsun": 2.0, "vmicro_km_s": 2, "archive": "BCvispec_v2.tar", "size_mb": 345},
+          "BC_v10": {"z_over_zsun": 2.0, "vmicro_km_s": 10, "archive": "BCvispec_v10.tar", "size_mb": 204},
+          "BG_v2": {"z_over_zsun": 1.0, "vmicro_km_s": 2, "archive": "BGvispec_v2.tar", "size_mb": 342},
+          "BG_v10": {"z_over_zsun": 1.0, "vmicro_km_s": 10, "archive": "BGvispec_v10.tar", "size_mb": 204},
+          "BL_v2": {"z_over_zsun": 0.5, "vmicro_km_s": 2, "archive": "BLvispec_v2.tar", "size_mb": 340},
+          "BL_v10": {"z_over_zsun": 0.5, "vmicro_km_s": 10, "archive": "BLvispec_v10.tar", "size_mb": 209},
+          "BS_v2": {"z_over_zsun": 0.2, "vmicro_km_s": 2, "archive": "BSvispec_v2.tar", "size_mb": 340},
+          "BS_v10": {"z_over_zsun": 0.2, "vmicro_km_s": 10, "archive": "BSvispec_v10.tar", "size_mb": 216},
+          "BT_v2": {"z_over_zsun": 0.1, "vmicro_km_s": 2, "archive": "BTvispec_v2.tar", "size_mb": 339},
+          "BT_v10": {"z_over_zsun": 0.1, "vmicro_km_s": 10, "archive": "BTvispec_v10.tar", "size_mb": 211}
+        },
+        "note": "the BS06 page prints Z/Z_sun = 1/2 for both BL and BS; the paper's five values are 2, 1, 0.5, 0.2, 0.1 (S = 0.2) — the letters and archive names, which the code keys on, are unambiguous"
+      },
+      "total": "20 archives, ~3.6 GB"
+    },
+    "member_facts": [
+      "members are flat (no subdirectory), named {comp}{teff:05d}g{logg*100:03d}v{vmicro*10:02d}.vis.{7|17}.gz, and gzip-compressed inside the tar (verified on Gvispec.tar: 138 members, 69 + 69)",
+      "kind 7 = detailed spectrum (Gvispec.tar G27500g300v10: 198345 rows from 3000 Angstrom); kind 17 = continuum (1697 rows on its own coarser wavelength grid) — the two kinds are one model's two data but NOT row-aligned; stellarlib records the sibling per node and never fakes an aligned continuum"
+    ],
     "format_facts": [
-      "one gzip ASCII file per atmosphere and spectrum kind: {comp}{teff:05d}g{logg*100:03d}v{vmicro*10:02d}.vis.{7|17}.gz",
-      "kind 7 = detailed spectrum, kind 17 = continuum; vispec tars carry both",
       "two columns: wavelength [Angstrom, AIR in the optical] and Eddington flux H_lambda [erg/s/cm^2/Angstrom]",
       "SYNSPEC native sampling ~0.03 Angstrom per point in the red optical (R ~ 2e5)",
       "on-disk sets may drop the .gz suffix; a reader given such a path opens path + '.gz'"
@@ -38,8 +55,7 @@
     "on_disk_sets_seen": {
       "ostar2002": "69 kind-7 files, composition G (Z/Z_sun = 1), vmicro 1 km/s",
       "bstar2006": "163 kind-7 files, composition BG (Z/Z_sun = 1), vmicro 2 km/s"
-    },
-    "tar_inventory": "NOT YET VERIFIED LIVE — resolve the per-composition *vispec*.tar names and sizes from tlusty.oca.eu before build_database use; record the verification date here"
+    }
   },
   "references": [
     "Lanz, T., & Hubeny, I. 2003, ApJS 146, 417",

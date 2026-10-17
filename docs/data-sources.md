@@ -10,21 +10,45 @@ Source: <https://archive.stsci.edu/hlsps/bosz> — Meszaros et al. 2024,
 A&A, 688, A197 (arXiv:2407.10872); the legacy library is Bohlin et al.
 2017, AJ, 154, 106.
 
-### Release tree (verified live 2026-10-17)
+### Release tree (verified live 2026-10-17; bulk packaging 2026-10-18)
 
 - `.../bosz2024/r<R>/<metallicity>/<file>` with R ∈ {500, 1000, 2000,
   5000, 10000, 20000, 50000} (plus `rorig/`, the original-sampling
   variant) and 14 metallicity directories `m+0.75` ... `m-2.50`.
 - Wavelength grids live in `.../bosz2024/wavelength_grids/
   bosz2024_wave_r<R>.txt` — one file per resolution, not per metallicity.
-- One (R = 500, [M/H] = 0) directory holds 45,724 files: the (Teff,
+- One (R, [M/H]) directory holds 45,724 spectrum files: the (Teff,
   log g) nodes interleaved with their [a/M] (−0.25/0/+0.25), [C/M]
-  (−0.75/−0.25/0/+0.25), and vmicro (0/1/2/4 km/s) variants. A grid
-  window pins one composition choice and enumerates its files by the
-  filename grammar.
+  (−0.75/−0.25/0/+0.25), and vmicro (0/1/2/4 km/s) variants. The
+  directories are the upstream publishing units; a stellarlib product
+  is one directory's complete mirror (below).
 - Eight r500 files downloaded 2026-10-17 and checksum-recorded in the
   catalog (sizes 40,499–42,308 bytes); the network test re-verifies
   them.
+
+### Official bulk packages (verified live 2026-10-18)
+
+- MAST publishes one official bulk-download script per directory:
+  `.../download_scripts/hlsp_bosz_bosz2024_sim_r<R>_m{±d.dd}_v1_bulkdl.sh`
+  — 112 scripts (8 broadenings × 14 metallicities), each a plain list of
+  per-file `curl` commands enumerating that directory's complete content
+  (45,724 spectra; counted on r500, r10000, rorig at m+0.00). No
+  directory-level tarballs exist (probes 404). The script is upstream's
+  own manifest of the directory: stellarlib mirrors whole directories by
+  fetching the script first and then every file it lists — the complete
+  official package, never a subset.
+- The rorig directories additionally hold line-identification files
+  (11,431 per directory, v0 spectra only, three columns
+  wavelength/line IDs/equivalent width) that the official scripts do not
+  include — a separate upstream product line outside the spectral
+  mirror.
+- Library scale (the blueprint declares all of it; one HEAD-sampled file
+  size per resolution, gz sizes vary with model): r500 ≈ 43 KB and
+  r10000 ≈ 650 KB per file, rorig ≈ 17 MB. Full 112-directory mirror =
+  5,121,088 files, order 10 TB (rorig alone dominates). The per-part
+  fetch, two-state scan, and retry semantics are unchanged by scale; the
+  design never subsets, and how much is fetched at once is the builder's
+  iteration order, not a design axis.
 
 ### File format (verified against downloads)
 
@@ -119,13 +143,23 @@ models.
   confined to it cannot infer its release and requires an explicit
   `release=`.
 
-### Channel (NOT yet verified live)
+### Channel (verified live 2026-10-18)
 
-TLUSTY distributes per-composition `*vispec*.tar` archives; the exact
-archive inventory is unverified, so the fetch channel is closed by
-design and products enter through `register_local_product`. Verified
-on-disk sets seen: OSTAR2002 G (Z/Z☉ = 1, vmicro 1 km/s, 69 kind-7
-files), BSTAR2006 BG (vmicro 2 km/s, 163 kind-7 files).
+TLUSTY distributes per-composition `*vispec*.tar` archives; the complete
+inventory is now live-verified (catalog `tar_inventory`): OSTAR2002
+publishes 10 tars (compositions C G L S T V W X Y Z = Z/Z☉ 2, 1, 1/2,
+1/5, 1/10, 1/30, 1/50, 1/100, 1/1000, 0; 87–90 MB each; 138 members:
+69 kind-7 + 69 kind-17), BSTAR2006 publishes 10 tars (BC BG BL BS BT ×
+vmicro 2/10 km/s; 204–345 MB each) — 20 archives, ~3.6 GB in all,
+fetched from `.../tlusty/Tlusty2002/database/{archive}.tar`. The tar is
+the upstream publishing unit and the stellarlib product: fetched whole,
+stored verbatim, spectra streamed from its members. Kind 7 and kind 17
+are one model's two data and always arrive together — the reader records
+each node's kind-17 sibling (they are not row-aligned: kind 17 samples
+its own coarser wavelength grid, ~1,697 vs ~198,345 rows on
+G27500g300v10) and never fakes an aligned continuum. The site's root
+vhost currently redirects to an unrelated page; content is served under
+`/tlusty/Tlusty2002/` (recorded in the catalog's `base_url`).
 
 ## Pitfall index (all recorded in the registry notes too)
 
