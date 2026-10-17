@@ -15,6 +15,8 @@ from typing import Callable
 from stellarlib.exceptions import SourceUnavailableError, UnsupportedModelError
 from stellarlib.models.bosz.backend import read_bosz
 from stellarlib.models.bosz.reader import recognize_bosz
+from stellarlib.models.tlusty.backend import read_tlusty
+from stellarlib.models.tlusty.reader import recognize_tlusty
 
 __all__ = ["BACKENDS", "get_backend", "register_backend", "catalog", "parse_model_spec"]
 
@@ -30,6 +32,7 @@ class Backend:
 
 BACKENDS: dict[str, Backend] = {
     "bosz": Backend(name="bosz", recognize=recognize_bosz, read=read_bosz),
+    "tlusty": Backend(name="tlusty", recognize=recognize_tlusty, read=read_tlusty),
 }
 
 
