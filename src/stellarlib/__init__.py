@@ -5,7 +5,7 @@ preserving, standardizing, and querying theoretical stellar spectra published
 on (Teff, log g, [M/H], ...) parameter grids.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 from stellarlib.core import FieldSpec, ModelIdentity, ParameterRole, ParameterSpec
 from stellarlib.database.build import build_database, register_local_product

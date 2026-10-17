@@ -22,7 +22,7 @@ flowchart TB
     end
     SP["Spectrum (one node)<br/>+ SpectrumSet (lightweight node index<br/>+ lazy loader)"]
     GRID["SpectrumGrid / UnifiedSpectra<br/>axes tell the truth; holes reported<br/>exact / nearest selection<br/>multilinear / voronoi queries"]
-    DB["database<br/>design + two-state scan<br/>on-demand per-file fetch<br/>register_local_product"]
+    DB["database<br/>blueprint + two-state scan<br/>whole-package mirroring<br/>register_local_product"]
     MAT["materialize<br/>merged (axes, wavelength) block<br/>sources sidecar + verification"]
     FILES -->|"reader"| NS --> SP --> GRID
     NS --> UV
@@ -110,30 +110,30 @@ the registry notes, never patched in code.
 
 ```mermaid
 flowchart LR
-    DECL["design.json<br/>(declared windows)"] --> SCAN
+    DECL["design.json<br/>(the blueprint: full upstream library)"] --> SCAN
     subgraph CORE["database package (generic)"]
         SCAN["scan.py<br/>two-state: complete / incomplete<br/>ok | missing | nonconforming"]
-        BUILD["build.py<br/>fetch missing parts on demand<br/>never touch nonconforming"]
+        BUILD["build.py<br/>fetch missing parts<br/>never touch nonconforming"]
         INV["inventory.py<br/>database.json / README /<br/>unified-parameters.md / db_status.*"]
     end
     subgraph ADAPT["family adapters"]
-        BA["bosz: window enumeration<br/>+ per-file MAST fetch"]
-        TA["tlusty: local-only channel<br/>(vispec tars unverified)"]
+        BA["bosz: directory mirrors<br/>(official bulkdl manifests<br/>+ per-file MAST fetch)"]
+        TA["tlusty: whole vispec tars<br/>(20 verified archives)"]
     end
     REG["register_local_product<br/>copy or by-reference"]
     SCAN --> BUILD --> INV
     BA --> SCAN
     TA --> SCAN
     REG --> SCAN
-    NET["MAST (HTTP)"] --> BUILD
+    NET["MAST / tlusty.oca.eu (HTTP)"] --> BUILD
 ```
 
 The database follows the unified management architecture: a **Product**
-is one directory (one coherent set of files + MANIFEST), a **Part** is
-one file (the unit of fetching and judgment), the **Design** is the
-complete declared target (windows enumerated through the filename
-grammar — the blueprint is complete), and fetching is per-part and on
-demand. The **Scanner** judges every part (`ok` / `missing` /
+is one directory (one whole official package + MANIFEST), a **Part** is
+one file (the unit of fetching and judgment), the **Blueprint**
+(design.json) is a local record of the complete upstream library — a
+family declaration expands to every upstream unit, whole, and has no
+partial form. The **Scanner** judges every part (`ok` / `missing` /
 `nonconforming`, products `complete` / `incomplete`); the **Builder**
 fetches only what is missing and never completes a product that holds
 nonconforming parts (a checksum proves integrity, not design
@@ -146,23 +146,33 @@ files actually held). Everything at the root (`database.json`, `README.md`,
 `unified-parameters.md`, `db_status.*`) is regenerated from directory
 contents alone, never copied between machines.
 
-A window declaration pins what its product holds: one resolution, one
-composition ([a/M], [C/M]), and the declared (Teff, log g, [M/H]) axis
-lists. The design enumerates exactly one spectrum file per declared
-point plus that resolution's wavelength sidecar, and the builder fetches
-exactly those files — nothing beyond the declaration, ever. The
-upstream's unit of organization is coarser: one MAST (R, [M/H])
-directory interleaves every composition and vmicro variant (~45,700
-files; docs/data-sources.md), but stellarlib never mirrors a directory;
-holding a whole slice is itself expressed by declaring the full axis
-lists. Materialization inherits the same bound — `materialize_grid`
-merges the nodes of one grid, a grid opens one product, and a product
-holds only what its window declared — so no code path can materialize
-an undeclared volume.
+Each family mirrors its upstream exactly at the granularity the source
+publishes (the verified facts and scales live in docs/data-sources.md):
 
-TLUSTY's fetch channel is deliberately closed: the per-composition
-vispec tar inventory is not yet live-verified, so TLUSTY products enter
-through `register_local_product` until it is.
+- **BOSZ** publishes one directory per (broadening, metallicity) and an
+  official bulk-download script per directory — upstream's own manifest
+  of its 45,724 spectra. A product is that whole directory mirror: the
+  script is fetched first (a designed part, cached under its upstream
+  name) and expanded in-build to the complete file list; the shared
+  wavelength grids mirror as their own product and pair automatically
+  at grid-open. The blueprint declares all 112 directories.
+- **TLUSTY** publishes per-composition vispec tar archives holding both
+  spectrum kinds of every atmosphere. A product is one whole tar —
+  fetched once, stored verbatim, never extracted; spectra stream from
+  its members. The blueprint declares all 20 archives.
+
+Reading a mirror is a selection, never a fetch-side subset: a BOSZ
+mirror interleaves every composition and vmicro variant, so opening a
+grid picks one composition (`am`/`cm`, default solar-scaled) and the
+family-policy vmicro per node, with the choice recorded in the set
+notes. Materialization follows the grid, not any declaration:
+`materialize_grid` merges the nodes of whatever grid is opened — one
+product, one composition — and the mirror on disk always holds more
+than any single grid over it.
+
+Products can also enter through `register_local_product` (files you
+already hold, or a hand-downloaded vispec tar) — checksummed and
+recorded, copy or by-reference.
 
 ## Provenance
 

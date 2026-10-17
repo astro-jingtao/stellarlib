@@ -6,7 +6,7 @@ import stellarlib
 
 
 def test_version():
-    assert stellarlib.__version__ == "0.1.0"
+    assert stellarlib.__version__ == "0.1.1"
 
 
 def test_all_names_importable():

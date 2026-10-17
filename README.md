@@ -19,9 +19,11 @@ In scope, for the initial release:
 - Native-file reading with full fidelity, unified field vocabulary, grid
   construction with hole reporting, cross-node interpolation (multilinear,
   plus Voronoi nearest-node for grids with holes), wavelength resampling,
-  provenance on every object, local-database construction with on-demand
-  fetching, registration of local file subsets, and materialized array
-  side-products with complete provenance.
+  provenance on every object, local-database construction as whole
+  official-package mirrors (the blueprint always declares the full
+  upstream library; fetching happens at exactly the granularity the
+  source publishes), registration of local file sets, and materialized
+  array side-products with complete provenance.
 
 Out of scope, deliberately:
 
@@ -78,20 +80,30 @@ rows = grid.corner_spectrum(idx[0])                    # (8, n_wave)
 block = stellarlib.materialize.materialize_grid(grid, "block")   # npz + sources sidecar
 ```
 
-Build a local database against a declared window (design complete,
-fetching on demand; `dry_run` first) or register files you already hold:
+Build a local database as a mirror of the complete upstream library.
+The blueprint is a family-level declaration — it always covers every
+official package the source publishes (BOSZ: all 112 (broadening,
+metallicity) directory mirrors + the shared wavelength grids; TLUSTY:
+all 20 per-composition vispec tars) — and `build_database` completes
+what is missing, one whole unit at a time (`dry_run` first):
 
 ```python
 stellarlib.build_database("my-db", dry_run=True,
-    declarations=[dict(family="bosz", label="giants", resolution=500,
-                       teffs=[3000, 3500, 4000], loggs=[1.0, 1.5, 2.0],
-                       mhs=[0.0])])
+    declarations=[dict(family="bosz"), dict(family="tlusty")])
 db = stellarlib.open_database("my-db")
-grid = db.grid("bosz/2024", label="giants")
 ```
 
-TLUSTY enters through registration (its per-composition tar inventory is
-not yet live-verified):
+Open one mirrored product as a grid. A BOSZ directory interleaves every
+composition and vmicro variant, so opening it is a selection (defaults:
+solar-scaled composition, the atmosphere-family vmicro):
+
+```python
+grid = db.grid("bosz/2024", collection="r500", label="m+0.00")
+grid = db.grid("tlusty/OSTAR2002", label="G")   # one whole vispec tar
+```
+
+Files you already hold (an extracted tar, a curated subset) still enter
+through registration:
 
 ```python
 stellarlib.register_local_product("my-db", "tlusty", "ostar_g",
