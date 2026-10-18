@@ -6,9 +6,12 @@ verification evidence; unverified statements say so.
 
 ## BOSZ 2024 (MAST HLSP)
 
-Source: <https://archive.stsci.edu/hlsps/bosz> — Meszaros et al. 2024,
+Source: <https://archive.stsci.edu/hlps/bosz> — Meszaros et al. 2024,
 A&A, 688, A197 (arXiv:2407.10872); the legacy library is Bohlin et al.
-2017, AJ, 154, 106.
+2017, AJ, 154, 106. Verbatim copies of the official README and a dated
+snapshot of the landing page are archived in
+[upstream/bosz2024/](upstream/bosz2024/) (CC BY 4.0, per the landing
+page).
 
 ### Release tree (verified live 2026-10-17; bulk packaging 2026-10-18)
 
