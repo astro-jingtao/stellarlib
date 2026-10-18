@@ -432,7 +432,7 @@ class BoszSpectra(UnifiedSpectra):
         if database is not None:
             return cls(
                 _database_grid(
-                    "bosz",
+                    "bosz/2024",
                     database,
                     label,
                     collection=collection,
@@ -476,7 +476,8 @@ class TlustySpectra(UnifiedSpectra):
         the files' Teff span when omitted; a stated release is validated.
         """
         if database is not None:
-            return cls(_database_grid("tlusty", database, label).sets)
+            model = "tlusty" if release is None else f"tlusty/{release}"
+            return cls(_database_grid(model, database, label).sets)
         if paths is None:
             raise ValueError(
                 "construct('tlusty/<release>') requires paths= of local "
@@ -488,12 +489,30 @@ class TlustySpectra(UnifiedSpectra):
 
 
 def _database_grid(
-    family: str, database, label, collection=None, **selection
+    model: str, database, label, collection=None, **selection
 ) -> SpectrumGrid:
-    from stellarlib.database import open_database
+    from stellarlib.database.core import open_database
 
     db = database if not isinstance(database, (str, Path)) else open_database(database)
-    return db.grid(family, label=label, collection=collection, **selection)
+    if "/" in model:
+        return db.grid(model, label=label, collection=collection, **selection)
+    # an unqualified family ("tlusty", release left to inference): the
+    # database states the release itself — the label must pin one
+    # product across the family's releases, the same pinning
+    # Database.grid applies within one release
+    family = model
+    releases = sorted(
+        p.release for p in db.products_for(family) if label is None or p.label == label
+    )
+    if len(set(releases)) != 1:
+        raise ValueError(
+            f"model {model!r} is not version-qualified and label {label!r} "
+            f"does not pin one release (products: {releases or 'none'}); "
+            f"state the release, e.g. {family}/<release>"
+        )
+    return db.grid(
+        f"{family}/{releases[0]}", label=label, collection=collection, **selection
+    )
 
 
 def _as_path_list(paths) -> list:

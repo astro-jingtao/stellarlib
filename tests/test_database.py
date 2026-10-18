@@ -770,3 +770,31 @@ class TestDatabaseOpen:
         with pytest.raises(ValueError, match="pin one"):
             db.grid("bosz/2024")
         assert db.grid("bosz/2024", label="a") is not None
+
+    def test_facade_construct_from_database(self, tmp_path):
+        # the family facades' database= path: construct() opens the
+        # database and hands its sets to the unified query layer
+        # (regression: the import inside _database_grid targeted a name
+        # the database package never exported, so this path ImportError'd)
+        from stellarlib.facade import BoszSpectra, TlustySpectra
+
+        register_local_product(
+            tmp_path, "bosz", "solar",
+            [DATA / n for n in SOLAR_NAMES] + [DATA / WAVE_NAME],
+            note="registered subset",
+        )
+        files = [
+            TLUSTY_DATA / n
+            for n in (
+                "G30000g300v10.vis.7.gz",
+                "G30000g325v10.vis.7.gz",
+                "G32500g300v10.vis.7.gz",
+                "G32500g325v10.vis.7.gz",
+            )
+        ]
+        register_local_product(tmp_path, "tlusty", "ostar_g", files, note="")
+
+        bosz = BoszSpectra.construct(database=tmp_path, label="solar")
+        assert len(bosz) == len(SOLAR_NAMES)
+        tlusty = TlustySpectra.construct(database=tmp_path, label="ostar_g")
+        assert len(tlusty) == len(files)
