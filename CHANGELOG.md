@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- The facades' `construct(database=...)` path works again: it imported
+  `open_database` from a module that never exported it and passed the
+  bare family name to `Database.grid` (which requires
+  version-qualified models). The TLUSTY facade keeps its documented
+  release inference — the label must pin one product across the
+  family's releases.
 - `stellarlib.__version__` follows `pyproject.toml` again (the 0.1.2 bump
   had missed the constant).
 - `TODO.md` records the pending noresam (rorig) read-side design: the
