@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import shutil
 from datetime import datetime, timezone
+from fnmatch import fnmatch
 from pathlib import Path
 from typing import Iterable
 
@@ -191,11 +192,32 @@ def _build_product(
     write_manifest(directory, manifest)
 
 
+def _apply_select(products, patterns: list[str] | None):
+    """Filter one run's products by glob patterns over their paths.
+
+    A pattern that matches no declared product is an error — a typo'd
+    selector must never masquerade as a completed round.
+    """
+    if patterns is None:
+        return products
+    names = [p.label_path for p in products]
+    unmatched = [p for p in patterns if not any(fnmatch(n, p) for n in names)]
+    if unmatched:
+        raise ValueError(
+            f"select pattern(s) match no declared product: {unmatched}; "
+            f"declared: {names}"
+        )
+    return tuple(
+        p for p in products if any(fnmatch(p.label_path, pat) for pat in patterns)
+    )
+
+
 def build_database(
     database: str | Path,
     declarations: Iterable[dict] | None = None,
     session=None,
     dry_run: bool = False,
+    select: Iterable[str] | None = None,
     log=print,
 ) -> Database | None:
     """Build (or complete) a local database against its blueprint.
@@ -209,6 +231,14 @@ def build_database(
     arrival); products with nonconforming parts are skipped with a
     notice, never patched. ``dry_run=True`` reports the plan and touches
     nothing.
+
+    ``select`` restricts what this one run fetches — a list of glob
+    patterns matched against product paths (``"family/collection/
+    label"``, e.g. ``"bosz/rorig/*"``, ``"tlusty/OSTAR2002/G"``). The
+    blueprint is untouched: unselected products keep their state and a
+    later run without ``select`` completes them. Fetch order is the
+    builder's concern, never a design axis — ``select`` only chooses
+    which whole products this round works on.
     """
     root = Path(database)
     merged = _merge_designs(root, declarations)
@@ -217,11 +247,15 @@ def build_database(
             "no blueprint declared: pass declarations=[{'family': ...}] "
             "once; later builds reuse the database's design.json"
         )
+    patterns = None if select is None else [str(p) for p in select]
+    if patterns is not None and not patterns:
+        raise ValueError("select must not be an empty list")
 
     if dry_run:
         root.mkdir(parents=True, exist_ok=True)
         report = scan_database(root, declarations=list(declarations or []))
-        for product in report.products:
+        shown = _apply_select(report.products, patterns)
+        for product in shown:
             missing = [
                 v for v in product.verdicts if v.kind == VerdictKind.MISSING
             ]
@@ -229,10 +263,27 @@ def build_database(
                 f"{product.label_path}: {product.state} "
                 f"({len(missing)} part(s) to fetch)"
             )
+        if patterns is not None:
+            log(
+                f"selection: {len(shown)} of {len(report.products)} "
+                "declared product(s) match select"
+            )
+        missing_parts = sum(
+            1
+            for p in shown
+            for v in p.verdicts
+            if v.kind == VerdictKind.MISSING
+        )
+        nonconforming = sum(
+            1
+            for p in shown
+            for v in p.verdicts
+            if v.kind == VerdictKind.NONCONFORMING
+        )
         log(
-            f"total: {len(report.products)} product(s), "
-            f"{report.missing_part_count()} missing part(s), "
-            f"{len(report.nonconforming_parts())} nonconforming (manual "
+            f"total: {len(shown)} product(s), "
+            f"{missing_parts} missing part(s), "
+            f"{nonconforming} nonconforming (manual "
             "review, never auto-fetched)"
         )
         return None
@@ -243,7 +294,7 @@ def build_database(
 
     from stellarlib.database.scan import ADAPTERS
 
-    for product in report.products:
+    for product in _apply_select(report.products, patterns):
         adapter = ADAPTERS[product.design.family]
         _build_product(product.design, adapter, root, session, log)
 

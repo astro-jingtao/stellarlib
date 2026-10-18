@@ -94,6 +94,16 @@ stellarlib.build_database("my-db", dry_run=True,
 db = stellarlib.open_database("my-db")
 ```
 
+Fetch rounds choose whole products, never subsets of them:
+`select=` takes glob patterns over product paths and restricts what one
+run fetches (the blueprint itself is untouched — later runs complete
+the rest):
+
+```python
+stellarlib.build_database("my-db",
+    select=["bosz/rorig/*", "bosz/wavelength_grids/*", "tlusty/*/*"])
+```
+
 Open one mirrored product as a grid. A BOSZ directory interleaves every
 composition and vmicro variant, so opening it is a selection (defaults:
 solar-scaled composition, the atmosphere-family vmicro):

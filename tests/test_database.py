@@ -565,6 +565,65 @@ class TestBuild:
         assert (directory / missing_name).exists()
 
 
+class TestBuildSelect:
+    def test_select_limits_one_round_to_whole_products(self, tmp_path):
+        session = _mirror_session()
+        build_database(
+            tmp_path,
+            declarations=[{"family": "bosz"}],
+            session=session,
+            select=["bosz/r500/m+0.00", "bosz/wavelength_grids/*"],
+        )
+        # the selected products were built (r500 m+0.00 + the wave
+        # product's r500 file; the other six wave files 404 by design
+        # of the fake upstream)
+        assert (tmp_path / "bosz" / "r500" / "m+0.00" / "MANIFEST.json").exists()
+        assert (
+            tmp_path / "bosz" / "wavelength_grids" / "all" / "MANIFEST.json"
+        ).exists()
+        # unselected products were not even attempted
+        assert not (tmp_path / "bosz" / "r500" / "m+0.25").exists()
+        assert not (tmp_path / "bosz" / "rorig").exists()
+        # the blueprint still declares the full library
+        design = json.loads((tmp_path / "design.json").read_text(encoding="utf-8"))
+        assert design["blueprint"] == [{"family": "bosz"}]
+        # a later unrestricted run completes the rest (retry semantics
+        # unchanged by rounds)
+        session2 = _mirror_session()
+        build_database(tmp_path, session=session2)
+        other = read_manifest(tmp_path / "bosz" / "r500" / "m+0.25")
+        other_script = "hlsp_bosz_bosz2024_sim_r500_m+0.25_v1_bulkdl.sh"
+        assert other["parts"][other_script]["http_status"] == 404
+
+    def test_select_unknown_pattern_fails_loudly(self, tmp_path):
+        with pytest.raises(ValueError, match="bosz/nope/\\*"):
+            build_database(
+                tmp_path,
+                declarations=[{"family": "bosz"}],
+                dry_run=True,
+                select=["bosz/nope/*"],
+            )
+
+    def test_select_empty_list_refused(self, tmp_path):
+        with pytest.raises(ValueError, match="empty"):
+            build_database(
+                tmp_path, declarations=[{"family": "bosz"}], select=[]
+            )
+
+    def test_select_dry_run_reports_the_subset(self, tmp_path, capsys):
+        build_database(
+            tmp_path,
+            declarations=[{"family": "tlusty"}],
+            dry_run=True,
+            select=["tlusty/OSTAR2002/G"],
+        )
+        out = capsys.readouterr().out
+        assert "tlusty/OSTAR2002/G" in out
+        assert "tlusty/BSTAR2006/BG_v2" not in out
+        assert "selection: 1 of 20" in out
+        assert "total: 1 product(s)" in out
+
+
 class TestRegisterLocalProduct:
     def test_copy_mode_self_contained(self, tmp_path):
         files = [DATA / n for n in NODE_NAMES] + [DATA / WAVE_NAME]

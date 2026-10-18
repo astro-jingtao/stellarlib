@@ -22,6 +22,11 @@ BOSZ catalog facts are re-verified against the official documentation.
   −0.25…+0.50 and [C/M] −0.75…+0.50; the README's real URL carries no
   "2024" in its filename. The README's 2025-09-24 recomputation notice
   and the CC BY 4.0 license are recorded.
+- `build_database` gains `select=`: glob patterns over product paths
+  (`"bosz/rorig/*"`, `"tlusty/OSTAR2002/G"`) restricting what one run
+  fetches to whole products. The blueprint is untouched — unselected
+  products keep their state and later runs complete them; a pattern
+  matching no declared product is an error, never a silent empty round.
 - Official upstream documentation (README + dated landing-page snapshot)
   is archived verbatim under `docs/upstream/bosz2024/`, kept
   byte-identical via a `-text` git attribute.
