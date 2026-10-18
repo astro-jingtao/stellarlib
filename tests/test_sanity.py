@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+from importlib.metadata import version as _dist_version
+
 import stellarlib
 
 
 def test_version():
-    assert stellarlib.__version__ == "0.1.1"
+    # the constant and the installed distribution must agree — the test
+    # reads the version from metadata instead of a hardcoded string so a
+    # release bump that misses one side fails here, loudly
+    assert stellarlib.__version__ == _dist_version("stellarlib")
 
 
 def test_all_names_importable():

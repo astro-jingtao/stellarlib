@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `stellarlib.__version__` follows `pyproject.toml` again (the 0.1.2 bump
+  had missed the constant).
 - `TODO.md` records the pending noresam (rorig) read-side design: the
   three-column native-sampling grammar, the lineid reader, and the open
   interpolation question (an explicit, provenance-recorded resampling
