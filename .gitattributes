@@ -3,3 +3,5 @@
 *.gz binary
 *.npz binary
 *.zip binary
+# archived upstream artifacts stay byte-identical to what was fetched
+docs/upstream/** -text
