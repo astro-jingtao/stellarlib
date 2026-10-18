@@ -138,7 +138,9 @@ partial form. The **Scanner** judges every part (`ok` / `missing` /
 `nonconforming`, products `complete` / `incomplete`); the **Builder**
 fetches only what is missing and never completes a product that holds
 nonconforming parts (a checksum proves integrity, not design
-membership). A build run may restrict itself to whole products with
+membership). A fetch pass may run with bounded parallelism
+(`build_database(workers=N)`) — a speed axis only: per-part atomicity,
+manifest recording, and resume semantics are identical. A build run may restrict itself to whole products with
 `select=` (glob patterns over product paths) — a fetch-round concern
 that never edits the blueprint. An upstream 404 is recorded as a failed fetch attempt
 (status, url, time in the MANIFEST) — the part stays missing, shows in

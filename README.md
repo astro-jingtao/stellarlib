@@ -104,6 +104,14 @@ stellarlib.build_database("my-db",
     select=["bosz/rorig/*", "bosz/wavelength_grids/*", "tlusty/*/*"])
 ```
 
+Large mirror rounds fetch faster with bounded per-pass parallelism — a
+speed axis only; per-part semantics, the two-state scan, and resume
+behavior are identical:
+
+```python
+stellarlib.build_database("my-db", select=["bosz/r20000/*"], workers=8)
+```
+
 A BOSZ product is one (broadening, metallicity) directory, so a single metallicity is exactly one product per broadening — `select=["bosz/r500/m+0.00"]` fetches only the solar-metallicity r500 mirror (see `docs/data-sources.md` for the full blueprint inventory).
 
 Open one mirrored product as a grid. A BOSZ directory interleaves every

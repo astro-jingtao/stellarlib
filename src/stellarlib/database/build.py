@@ -12,6 +12,9 @@ parts are never touched (a checksum pass proves completeness, not design
 membership); a failed fetch (e.g. an HTTP 404) is recorded as exactly
 that failed attempt and the part stays missing — the next build retries
 it. ``dry_run=True`` reports the plan without touching the disk.
+A pass may fetch its parts through bounded parallelism
+(``build_database(workers=N)``) — a speed axis only: per-part semantics,
+the two-state scan, and resume behavior are identical.
 Registration admits locally held files as products — copied in by
 default (self-contained, portable), or referenced in place for sets that
 already live where their project wants them.
@@ -21,14 +24,19 @@ from __future__ import annotations
 
 import json
 import shutil
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from fnmatch import fnmatch
 from pathlib import Path
 from typing import Iterable
 
+import requests
+
 from stellarlib.database.core import Database, ProductRecord, open_database
 from stellarlib.database.design import (
     FamilyAdapter,
+    PartDesign,
     PartVerdict,
     ProductDesign,
     VerdictKind,
@@ -40,6 +48,7 @@ from stellarlib.database.manifest import (
     write_manifest,
 )
 from stellarlib.database.scan import scan_database
+from stellarlib.exceptions import SourceUnavailableError
 from stellarlib.integrity import sha256_file
 from stellarlib.models.bosz.reader import recognize_bosz, recognize_wave_grid
 from stellarlib.models.tlusty.reader import recognize_tlusty
@@ -48,6 +57,12 @@ from stellarlib.registry import references
 __all__ = ["build_database", "register_local_product", "DESIGN_SCHEMA"]
 
 DESIGN_SCHEMA = "stellarlib-design/2"
+
+
+def _new_fetch_session() -> requests.Session:
+    session = requests.Session()
+    session.headers["User-Agent"] = "stellarlib (spectral database builder)"
+    return session
 
 
 def _now_iso() -> str:
@@ -111,9 +126,15 @@ def _build_product(
     root: Path,
     session,
     log,
+    workers: int = 1,
+    session_factory=None,
 ) -> None:
     """Complete one product: expand the design, fetch missing parts, and
-    re-expand once the upstream bulk manifest part has arrived."""
+    re-expand once the upstream bulk manifest part has arrived.
+
+    ``workers`` bounds the parallelism of one fetch pass (1 = strictly
+    sequential, the default); per-part semantics are identical either
+    way (see :func:`build_database`)."""
     directory = root / design.family / design.collection / design.label
     directory.mkdir(parents=True, exist_ok=True)
     manifest_path = directory / "MANIFEST.json"
@@ -160,25 +181,96 @@ def _build_product(
             if v.kind == VerdictKind.MISSING
         ]
 
+    def _expands_design(part: PartDesign, entry: dict) -> bool:
+        return part.role in ("bulk_manifest", "directory_index") and (
+            "sha256" in entry
+        )
+
+    def _record(part: PartDesign, entry: dict) -> bool:
+        manifest["parts"][part.name] = entry
+        # an upstream manifest of the directory has arrived (the
+        # official bulkdl script; for rorig also the directory index):
+        # the design now enumerates every file they list
+        return _expands_design(part, entry)
+
+    def _fetch_one(pending_item, session_of):
+        current, _verdict, part = pending_item
+        log(f"  fetch {part.name}")
+        entry = dict(
+            adapter.fetch_part(
+                current, part, directory, session=session_of(), log=log
+            )
+        )
+        return part, entry
+
     def _fetch_all(pending) -> bool:
         nonlocal design
-        for current, _verdict, part in pending:
-            log(f"  fetch {part.name}")
-            entry = dict(
-                adapter.fetch_part(
-                    current, part, directory, session=session, log=log
+        if workers <= 1:
+            for pending_item in pending:
+                part, entry = _fetch_one(pending_item, lambda: session)
+                if _record(part, entry):
+                    design = adapter.expand_design(design, directory)
+                    return True
+            return False
+        return _fetch_all_parallel(pending)
+
+    def _fetch_all_parallel(pending) -> bool:
+        nonlocal design
+        abort = threading.Event()
+        local = threading.local()
+        created: list = []
+
+        def worker_session():
+            own = getattr(local, "session", None)
+            if own is None:
+                own = (
+                    _new_fetch_session()
+                    if session_factory is None
+                    else session_factory()
                 )
-            )
-            manifest["parts"][part.name] = entry
-            if (
-                part.role in ("bulk_manifest", "directory_index")
-                and "sha256" in entry
-            ):
-                # an upstream manifest of the directory has arrived (the
-                # official bulkdl script; for rorig also the directory
-                # index): the design now enumerates every file they list
-                design = adapter.expand_design(design, directory)
-                return True
+                created.append(own)
+                local.session = own
+            return own
+
+        def fetch_or_abort(pending_item):
+            if abort.is_set():
+                raise SourceUnavailableError(
+                    f"{pending_item[2].name}: fetch batch aborted after an "
+                    "earlier fetch failure"
+                )
+            return _fetch_one(pending_item, worker_session)
+
+        expanded = False
+        failure: BaseException | None = None
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = [pool.submit(fetch_or_abort, item) for item in pending]
+            for future in as_completed(futures):
+                if future.cancelled():
+                    continue
+                try:
+                    part, entry = future.result()
+                except Exception as exc:
+                    if failure is None:
+                        # first failure fails the run loudly (the same
+                        # contract as the sequential path); the rest of
+                        # the batch drains — every part fetch is atomic,
+                        # so a drained batch leaves only complete files
+                        failure = exc
+                        abort.set()
+                        for other in futures:
+                            other.cancel()
+                    continue
+                if _record(part, entry):
+                    expanded = True
+        for own in created:
+            closer = getattr(own, "close", None)
+            if closer is not None:
+                closer()
+        if failure is not None:
+            raise failure
+        if expanded:
+            design = adapter.expand_design(design, directory)
+            return True
         return False
 
     while True:
@@ -219,6 +311,8 @@ def build_database(
     dry_run: bool = False,
     select: Iterable[str] | None = None,
     log=print,
+    workers: int = 1,
+    session_factory=None,
 ) -> Database | None:
     """Build (or complete) a local database against its blueprint.
 
@@ -239,8 +333,35 @@ def build_database(
     later run without ``select`` completes them. Fetch order is the
     builder's concern, never a design axis — ``select`` only chooses
     which whole products this round works on.
+
+    ``workers`` bounds the parallelism of one product's fetch pass
+    (default 1 = strictly sequential): with ``workers > 1`` the pending
+    parts of one pass are fetched by that many worker threads, each
+    holding its own session (created by ``session_factory``, or a plain
+    ``requests.Session`` with the builder user agent when omitted).
+    Per-part semantics are identical either way: every part is fetched
+    whole or not at all (atomic tmp+replace, so an interrupted batch
+    leaves no partial files), its manifest entry is recorded on arrival,
+    a 404 stays a recorded failed fetch, and a transport error fails the
+    run loudly after the in-flight batch drains — the next build resumes
+    exactly where this one stopped. ``session`` (a single session) is
+    the sequential path's injection point and cannot be combined with
+    ``workers > 1``.
     """
     root = Path(database)
+    if workers < 1:
+        raise ValueError(f"workers must be >= 1; got {workers}")
+    if session is not None and workers > 1:
+        raise ValueError(
+            "session= serves the sequential path (workers=1); for "
+            "workers > 1 pass session_factory= — each worker thread "
+            "holds its own session"
+        )
+    if session_factory is not None and workers <= 1:
+        raise ValueError(
+            "session_factory= serves the parallel path (workers > 1); "
+            "the sequential path injects its single session via session="
+        )
     merged = _merge_designs(root, declarations)
     if not merged:
         raise ValueError(
@@ -294,12 +415,25 @@ def build_database(
 
     from stellarlib.database.scan import ADAPTERS
 
-    for product in _apply_select(report.products, patterns):
-        adapter = ADAPTERS[product.design.family]
-        _build_product(product.design, adapter, root, session, log)
+    own_session = False
+    if session is None:
+        # one session reused across the whole sequential build: a
+        # session per part would pay connection setup on every file
+        session = _new_fetch_session()
+        own_session = True
+    try:
+        for product in _apply_select(report.products, patterns):
+            adapter = ADAPTERS[product.design.family]
+            _build_product(
+                product.design, adapter, root, session, log,
+                workers=workers, session_factory=session_factory,
+            )
 
-    refresh_inventory(root)
-    return open_database(root)
+        refresh_inventory(root)
+        return open_database(root)
+    finally:
+        if own_session:
+            session.close()
 
 
 def register_local_product(

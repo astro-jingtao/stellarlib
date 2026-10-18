@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- `build_database` gains `workers=`: bounded parallelism for one
+  product's fetch pass (default 1, strictly sequential). A
+  `workers > 1` pass fetches pending parts through that many worker
+  threads, each holding its own session (`session_factory=` overrides
+  session creation; `session=` remains the sequential injection point
+  and the two are refused in the wrong combination). Per-part semantics
+  are unchanged: atomic tmp+replace per file, manifest entry on
+  arrival, 404 as a recorded failed fetch, and a transport error fails
+  the run loudly after the in-flight batch drains — the next build
+  resumes where this one stopped. The sequential default now also
+  reuses one session across the whole build instead of paying
+  connection setup on every file (measured on a 628,620-file mirror
+  round: per-file fetches are latency-bound, ~2.2 s/file at one
+  session per part).
 - The facades' `construct(database=...)` path works again: it imported
   `open_database` from a module that never exported it and passed the
   bare family name to `Database.grid` (which requires

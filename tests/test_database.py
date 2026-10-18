@@ -610,6 +610,163 @@ class TestBuildSelect:
                 tmp_path, declarations=[{"family": "bosz"}], select=[]
             )
 
+
+class _RaisingSession(FakeSession):
+    """Serves the mapped URLs; raises for the URLs in ``broken``."""
+
+    def __init__(self, mapping, broken, calls):
+        super().__init__(mapping)
+        self._broken = set(broken)
+        self._calls = calls  # shared across worker sessions
+
+    def get(self, url, stream=True, timeout=None):
+        self._calls.append(url)
+        if url in self._broken:
+            import requests
+
+            raise requests.ConnectionError("simulated transport failure")
+        if url in self.mapping:
+            return FakeResponse(200, self.mapping[url])
+        return FakeResponse(404, b"")
+
+
+class TestParallelFetch:
+    def _factory(self, mapping, broken=None):
+        calls: list = []
+
+        def make():
+            return _RaisingSession(mapping, broken or (), calls)
+
+        return make, calls
+
+    def test_parallel_build_completes_the_product(self, tmp_path):
+        mapping = {SCRIPT_URL: _bulkdl_text(SOLAR_NAMES)}
+        for name in SOLAR_NAMES:
+            mapping[f"{_MAST}/r500/m+0.00/{name}"] = (DATA / name).read_bytes()
+        mapping[WAVE_URL] = (DATA / WAVE_NAME).read_bytes()
+        factory, _calls = self._factory(mapping)
+        db = build_database(
+            tmp_path,
+            declarations=[{"family": "bosz"}],
+            select=["bosz/r500/m+0.00", "bosz/wavelength_grids/*"],
+            workers=3,
+            session_factory=factory,
+        )
+        directory = tmp_path / "bosz" / "r500" / "m+0.00"
+        manifest = read_manifest(directory)
+        assert len(manifest["parts"]) == 1 + len(SOLAR_NAMES)
+        for name in SOLAR_NAMES:
+            entry = manifest["parts"][name]
+            assert entry["sha256"] == _sha(DATA / name)
+            assert entry["url"].endswith(name)
+        report = scan_database(tmp_path)
+        mirror = next(
+            p for p in report.products if p.label_path == "bosz/r500/m+0.00"
+        )
+        assert mirror.state == "complete"
+        grid = db.grid("bosz/2024", collection="r500", label="m+0.00")
+        assert len(grid) == len(SOLAR_NAMES)
+
+    def test_parallel_rorig_expands_after_manifest_batch(self, tmp_path):
+        import hashlib
+
+        lineid_bytes = _gz_text(["507.718 HeI 1.1", "522.213 HeI 6.1"])
+        noresam_bytes = _gz_text(["1000.0 1.0 1.0", "1001.0 0.9 1.0"])
+        mapping = {
+            RORIG_SCRIPT_URL: _rorig_script_text(RORIG_NODE_NAMES),
+            RORIG_INDEX_URL: _rorig_index_html(LINEID_NAMES, RORIG_NODE_NAMES),
+            **{
+                f"{RORIG_INDEX_URL}{name}": lineid_bytes
+                for name in LINEID_NAMES
+            },
+            **{
+                f"{RORIG_INDEX_URL}{name}": noresam_bytes
+                for name in RORIG_NODE_NAMES
+            },
+        }
+        factory, _calls = self._factory(mapping)
+        build_database(
+            tmp_path,
+            declarations=[{"family": "bosz"}],
+            select=["bosz/rorig/m+0.00"],
+            workers=2,
+            session_factory=factory,
+        )
+        directory = tmp_path / "bosz" / "rorig" / "m+0.00"
+        manifest = read_manifest(directory)
+        assert (
+            len(manifest["parts"])
+            == 2 + len(RORIG_NODE_NAMES) + len(LINEID_NAMES)
+        )
+        report = scan_database(tmp_path)
+        mirror = next(
+            p for p in report.products if p.label_path == "bosz/rorig/m+0.00"
+        )
+        assert mirror.state == "complete"
+
+    def test_parallel_failure_drains_batch_and_raises(self, tmp_path):
+        # half the spectra fail with a transport error: the run fails
+        # loudly (same contract as the sequential path), the batch
+        # drains, and every part that did arrive lies complete on disk
+        good = SOLAR_NAMES[:2]
+        broken_urls = [
+            f"{_MAST}/r500/m+0.00/{name}" for name in SOLAR_NAMES[2:]
+        ]
+        mapping = {SCRIPT_URL: _bulkdl_text(SOLAR_NAMES)}
+        for name in good:
+            mapping[f"{_MAST}/r500/m+0.00/{name}"] = (DATA / name).read_bytes()
+        factory, calls = self._factory(mapping, broken=broken_urls)
+        with pytest.raises(Exception, match="simulated transport failure"):
+            build_database(
+                tmp_path,
+                declarations=[{"family": "bosz"}],
+                select=["bosz/r500/m+0.00"],
+                workers=4,
+                session_factory=factory,
+            )
+        directory = tmp_path / "bosz" / "r500" / "m+0.00"
+        for name in good:
+            assert (directory / name).is_file()
+        assert not list(directory.glob("*.part"))
+        # the broken parts were attempted (and are the only missing ones)
+        for url in broken_urls:
+            assert url in calls
+
+    def test_workers_one_uses_the_sequential_session_path(self, tmp_path):
+        mapping = {SCRIPT_URL: _bulkdl_text(SOLAR_NAMES[:1])}
+        for name in SOLAR_NAMES[:1]:
+            mapping[f"{_MAST}/r500/m+0.00/{name}"] = (DATA / name).read_bytes()
+        build_database(
+            tmp_path,
+            declarations=[{"family": "bosz"}],
+            select=["bosz/r500/m+0.00"],
+            session=FakeSession(mapping),
+        )
+        manifest = read_manifest(tmp_path / "bosz" / "r500" / "m+0.00")
+        assert len(manifest["parts"]) == 2
+
+    def test_session_with_workers_refused(self, tmp_path):
+        with pytest.raises(ValueError, match="session_factory"):
+            build_database(
+                tmp_path,
+                declarations=[{"family": "bosz"}],
+                session=_mirror_session(),
+                workers=2,
+            )
+
+    def test_session_factory_without_workers_refused(self, tmp_path):
+        factory, _calls = self._factory({SCRIPT_URL: b""})
+        with pytest.raises(ValueError, match="session_factory"):
+            build_database(
+                tmp_path,
+                declarations=[{"family": "bosz"}],
+                session_factory=factory,
+            )
+
+    def test_workers_must_be_positive(self, tmp_path):
+        with pytest.raises(ValueError, match="workers"):
+            build_database(tmp_path, workers=0)
+
     def test_select_dry_run_reports_the_subset(self, tmp_path, capsys):
         build_database(
             tmp_path,
