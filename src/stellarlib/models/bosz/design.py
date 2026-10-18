@@ -61,8 +61,9 @@ _TIMEOUT_GET = 1800
 _BASE = "https://archive.stsci.edu/hlsps/bosz/bosz2024"
 
 # The verified upstream inventory (docs/data-sources.md, catalog.json):
-# 8 broadenings x 14 metallicity directories, every one holding 45,724
-# spectrum files as enumerated by its official bulkdl script.
+# 8 broadenings x 14 metallicity directories, each holding
+# 43,204-45,724 spectrum files depending on metallicity (628,620 in
+# total per broadening) as enumerated by its official bulkdl script.
 _BROADENING_NAMES = {
     500: "r500",
     1000: "r1000",

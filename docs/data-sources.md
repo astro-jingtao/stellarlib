@@ -17,7 +17,9 @@ page).
 
 - `.../bosz2024/r<R>/<metallicity>/<file>` with R ∈ {500, 1000, 2000,
   5000, 10000, 20000, 50000} (plus `rorig/`, the original-sampling
-  variant) and 14 metallicity directories `m+0.75` ... `m-2.50`.
+  variant) and 14 metallicity directories `m+0.75` ... `m-2.50` — one
+  per 0.25 dex step of [M/H], enumerated with per-directory counts in
+  the blueprint inventory below.
 - Wavelength grids live in `.../bosz2024/wavelength_grids/
   bosz2024_wave_r<R>.txt` — one file per numbered resolution, not per
   metallicity; rorig needs none (its files carry their own wavelength
@@ -73,15 +75,79 @@ page).
   parts from it — the lineid files are auxiliary data inside the rorig
   mirror products, on the same two-state fetch/scan/retry semantics as
   everything else.
-- Library scale (the blueprint declares all of it; one HEAD-sampled file
-  size per resolution, gz sizes vary with model): r500 ≈ 43 KB and
-  r10000 ≈ 650 KB per file, rorig ≈ 17 MB, lineid ≈ 0.9 MB. Spectra
-  total 5,028,960 files across the 112 directories, order 14 TB, of
-  which the rorig directories alone hold 628,620 files ≈ 10.5 TB (~74%,
-  the dominant share); lineid adds 157,155 files ≈ 0.15 TB. The
-  per-part fetch, two-state scan, and retry semantics are unchanged by
-  scale; the design never subsets, and how much is fetched at once is
-  the builder's iteration order, not a design axis.
+- Library scale (the blueprint declares all of it; the per-product-line
+  breakdown lives in the blueprint inventory below): spectra total
+  5,028,960 files across the 112 directories, order 14 TB, of which the
+  rorig directories alone hold 628,620 files ≈ 10.5 TB (~74%, the
+  dominant share); lineid adds 157,155 files ≈ 0.15 TB. The per-part
+  fetch, two-state scan, and retry semantics are unchanged by scale;
+  the design never subsets, and how much is fetched at once is the
+  builder's iteration order, not a design axis.
+
+### Blueprint inventory and fetch granularity
+
+The blueprint a database declares covers 133 products: BOSZ 113 (the
+112 directory mirrors plus the `wavelength_grids` directory) and TLUSTY
+20 vispec tars. The 112 BOSZ directories are the complete
+8 broadenings × 14 metallicities grid; the numbered resolutions and
+rorig all hold the same 628,620 spectra, sampled differently.
+
+The 14 metallicity directories differ in [M/H] alone — one directory
+per 0.25 dex step from +0.75 down to −2.50. Everything else a spectrum
+is ((Teff, log g) node, composition, vmicro) is interleaved inside
+every directory; [a/M], [C/M], and vmicro are read-side selections at
+grid open, never fetch granularities. Per-directory spectrum counts
+(all 14 official rorig scripts downloaded and counted; the numbered
+resolutions hold the same node structure — r500/m+0.00 verified equal
+to its rorig counterpart):
+
+| Directory | [M/H] | Spectra | Directory | [M/H] | Spectra |
+| --- | --- | --- | --- | --- | --- |
+| `m+0.75` | +0.75 | 44,840 | `m-1.00` | −1.00 | 45,392 |
+| `m+0.50` | +0.50 | 45,172 | `m-1.25` | −1.25 | 45,276 |
+| `m+0.25` | +0.25 | 45,456 | `m-1.50` | −1.50 | 45,100 |
+| `m+0.00` | +0.00 | 45,724 | `m-1.75` | −1.75 | 44,600 |
+| `m-0.25` | −0.25 | 45,556 | `m-2.00` | −2.00 | 43,988 |
+| `m-0.50` | −0.50 | 45,600 | `m-2.25` | −2.25 | 43,204 |
+| `m-0.75` | −0.75 | 45,396 | `m-2.50` | −2.50 | 43,316 |
+
+The counts sum to 628,620 per broadening — the total the official
+README states. Line-identification files exist only in the rorig
+directories, one per v0 spectrum (a quarter of the counts above;
+157,155 in total).
+
+Product lines and their scales (one HEAD-sampled gz size per
+resolution at m+0.00; sizes vary with model, so totals are
+order-of-magnitude):
+
+| Product line | Products | Per product | Sampled size each | Line total |
+| --- | --- | --- | --- | --- |
+| BOSZ r500 | 14 directories | 43,204–45,724 spectra | ~1.9 GB | ~27 GB |
+| BOSZ r1000 | 14 | same spectra | ~3.5 GB | ~49 GB |
+| BOSZ r2000 | 14 | same | ~6.5 GB | ~91 GB |
+| BOSZ r5000 | 14 | same | ~15 GB | ~207 GB |
+| BOSZ r10000 | 14 | same | ~29 GB | ~409 GB |
+| BOSZ r20000 | 14 | same | ~68 GB | ~0.95 TB |
+| BOSZ r50000 | 14 | same | ~143 GB | ~1.99 TB |
+| BOSZ rorig | 14 | same spectra + lineid (¼ as many) + bulkdl script + directory index | ~0.75 TB | ~10.5 TB + ~0.15 TB lineid |
+| BOSZ wavelength_grids | 1 | 7 sidecar grids | ~10 MB | negligible |
+| TLUSTY OSTAR2002 | 10 tars | 138 members (69 kind-7 + 69 kind-17) | 87–90 MB | ~0.9 GB |
+| TLUSTY BSTAR2006 | 10 tars | one composition × vmicro | 204–345 MB | ~2.7 GB |
+
+Fetch granularity follows the publishing unit: one (broadening,
+metallicity) directory is exactly one product — mirrored whole through
+its one official bulkdl script — so a single metallicity is fetchable,
+and nothing finer is. `build_database(select=...)` takes glob patterns
+over product paths (`family/collection/label`):
+
+- `select=["bosz/r500/m+0.00"]` — one metallicity at one broadening
+  (one whole product);
+- `select=["bosz/*/m+0.00"]` — one metallicity across all eight
+  broadenings;
+- `select=["bosz/r500/*"]` — one broadening, all 14 metallicities.
+
+A pattern matching no declared product is an error, so a typo cannot
+masquerade as a completed round.
 
 ### File format (verified against downloads)
 
