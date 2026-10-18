@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- `TODO.md` records the pending noresam (rorig) read-side design: the
+  three-column native-sampling grammar, the lineid reader, and the open
+  interpolation question (an explicit, provenance-recorded resampling
+  onto a shared wavelength grid — which grid, and how it is exposed).
+
 ## 0.1.2 (2026-10-18)
 
 The rorig line-identification product line enters the blueprint, and the

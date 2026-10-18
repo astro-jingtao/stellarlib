@@ -131,6 +131,7 @@ grid = db.grid("tlusty/OSTAR2002", label="ostar_g")
 - `docs/data-sources.md` — upstream sources, verified facts, pitfalls.
 - `docs/unified-parameters.md` — generated unified field/parameter tables.
 - `docs/coverage.md` — the downstream capability map (acceptance evidence).
+- `TODO.md` — design and feature work deliberately not yet done.
 
 ## Physics validation
 
