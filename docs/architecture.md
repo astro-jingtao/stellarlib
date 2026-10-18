@@ -101,6 +101,7 @@ Selection and interpolation are separate decisions:
 - **Wavelength resampling** (`resample_wavelengths`) is linear in
   wavelength, refuses extrapolation, and records itself in provenance —
   the result is a derived product and never masquerades as native.
+- The no-transform principle bounds the native layer, not the unified one: what a mirror holds is verbatim, and the transformations the unified structure needs for interpolation are legitimate derived operations — provenance-recorded, never replacing the native data. This is the clause the planned rorig read side rests on: those spectra publish at per-file native samplings with no shared grid, so cross-node interpolation requires an explicit resampling onto a shared wavelength grid, carried out and recorded like every other resample.
 
 Flux interpolation runs in the linear space the libraries publish
 (including the upstream-clipped exact-zero rows); quirks are recorded in

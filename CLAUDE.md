@@ -28,5 +28,6 @@ README and the `docs/` tree; consult them before editing:
   transformation must be recorded in provenance objects.
 - No data clipping or zeroing: native spectra are preserved verbatim; quirks
   of the published files are recorded in notes, never "fixed" in code.
+- The no-transform principle bounds the native layer: transformations the unified layer needs for interpolation (wavelength resampling; aligning the rorig native-sampling spectra onto a shared grid) are permitted as explicit, provenance-recorded derived operations that never rewrite or replace the native files.
 - Public API surface is re-exported from `stellarlib/__init__.py`; keep the
   `__all__` list in sync.
