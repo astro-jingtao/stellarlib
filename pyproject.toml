@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "stellarlib"
-version = "0.1.1"
+version = "0.1.2"
 description = "Faithful and unified access to theoretical stellar spectral libraries."
 readme = "README.md"
 requires-python = ">=3.10"

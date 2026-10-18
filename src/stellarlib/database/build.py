@@ -4,9 +4,10 @@ The blueprint (design.json) is a local record of the complete upstream
 library: every declared family expands to its whole official packages —
 never a subset. The builder completes what the blueprint declares and
 what is missing, one part per fetch, checksummed on arrival; for
-directory-mirror products the first part is the upstream bulk manifest
-itself (a BOSZ bulkdl script), whose arrival expands the design to the
-full file list within the same build. Products containing nonconforming
+directory-mirror products the upstream manifests arrive first (a BOSZ
+bulkdl script, plus for the rorig directories the Apache index that
+carries the lineid product line), and their arrival expands the design
+to the full file list within the same build. Products containing nonconforming
 parts are never touched (a checksum pass proves completeness, not design
 membership); a failed fetch (e.g. an HTTP 404) is recorded as exactly
 that failed attempt and the part stays missing — the next build retries
@@ -168,9 +169,13 @@ def _build_product(
                 )
             )
             manifest["parts"][part.name] = entry
-            if part.role == "bulk_manifest" and "sha256" in entry:
-                # the upstream manifest of the directory has arrived:
-                # the design now enumerates every file it lists
+            if (
+                part.role in ("bulk_manifest", "directory_index")
+                and "sha256" in entry
+            ):
+                # an upstream manifest of the directory has arrived (the
+                # official bulkdl script; for rorig also the directory
+                # index): the design now enumerates every file they list
                 design = adapter.expand_design(design, directory)
                 return True
         return False

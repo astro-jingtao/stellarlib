@@ -50,6 +50,23 @@ SOLAR_URLS = {
 }
 WAVE_URL = f"{_MAST}/wavelength_grids/{WAVE_NAME}"
 
+# an rorig directory additionally holds the lineid product line: two
+# noresam spectra per node (v0 and the family vmicro), a lineid file per
+# v0 spectrum, and the directory's own Apache index listing all of them
+RORIG_SCRIPT_NAME = "hlsp_bosz_bosz2024_sim_rorig_m+0.00_v1_bulkdl.sh"
+RORIG_SCRIPT_URL = f"{_MAST}/download_scripts/{RORIG_SCRIPT_NAME}"
+RORIG_INDEX_URL = f"{_MAST}/rorig/m+0.00/"
+RORIG_NODE_NAMES = [
+    f"bosz2024_ms_t3500_g{g}_m+0.00_a+0.00_c+0.00_v{v}_rorig_noresam.txt.gz"
+    for g in ("+1.0", "+2.0")
+    for v in (0, 2)
+]
+LINEID_NAMES = [
+    n.replace("_noresam.txt.gz", "_lineid.txt.gz")
+    for n in RORIG_NODE_NAMES
+    if "_v0_" in n
+]
+
 
 def _bulkdl_text(names) -> bytes:
     lines = ["#!/bin/sh"]
@@ -59,6 +76,37 @@ def _bulkdl_text(names) -> bytes:
             f'"{_MAST}/r500/m+0.00/{name}"'
         )
     return ("\n".join(lines) + "\n").encode()
+
+
+def _rorig_script_text(names) -> bytes:
+    lines = ["#!/bin/sh"]
+    for name in names:
+        lines.append(
+            f'curl -f --create-dirs --output "rorig/m+0.00/{name}" '
+            f'"{_MAST}/rorig/m+0.00/{name}"'
+        )
+    return ("\n".join(lines) + "\n").encode()
+
+
+def _rorig_index_html(lineid_names, spectrum_names) -> bytes:
+    links = ["/hlsps/bosz/bosz2024/rorig/"] + lineid_names + spectrum_names
+    body = "\n".join(
+        f'<li><a href="{name}"> {name.rsplit("/", 1)[-1]}</a></li>'
+        for name in links
+    )
+    html = (
+        "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 3.2 Final//EN\">\n"
+        "<html><head><title>Index of /hlsps/bosz/bosz2024/rorig/m+0.00"
+        "</title></head><body>\n"
+        f"<ul>{body}</ul>\n</body></html>\n"
+    )
+    return html.encode()
+
+
+def _gz_text(rows) -> bytes:
+    import gzip
+
+    return gzip.compress(("\n".join(rows) + "\n").encode())
 
 
 class FakeResponse:
@@ -123,6 +171,68 @@ class TestBlueprintDesign:
         assert part.name == SCRIPT_NAME
         assert part.role == "bulk_manifest"
         assert part.url == SCRIPT_URL
+
+    def test_rorig_design_also_declares_the_directory_index(self):
+        from stellarlib.models.bosz.design import BOSZ_ADAPTER
+
+        designs = {
+            d.directory_name: d
+            for d in BOSZ_ADAPTER.designs({"family": "bosz"})
+        }
+        design = designs["bosz/rorig/m+0.00"]
+        assert [p.role for p in design.parts] == [
+            "bulk_manifest",
+            "directory_index",
+        ]
+        index = design.parts[1]
+        assert index.name == "directory_index.html"
+        assert index.url == f"{_MAST}/rorig/m+0.00/"
+
+    def test_parse_directory_index(self):
+        from stellarlib.models.bosz.design import parse_directory_index
+
+        html = _rorig_index_html(LINEID_NAMES, RORIG_NODE_NAMES).decode()
+        pairs = parse_directory_index(html, RORIG_INDEX_URL)
+        assert pairs == tuple(
+            (name, f"{RORIG_INDEX_URL}{name}") for name in LINEID_NAMES
+        )
+        with pytest.raises(ValueError, match="no known BOSZ product slot"):
+            parse_directory_index(
+                '<li><a href="unexpected.dat">x</a></li>', RORIG_INDEX_URL
+            )
+        with pytest.raises(ValueError, match="no lineid files"):
+            parse_directory_index(
+                '<li><a href="x_r500_resam.txt.gz">x</a></li>', RORIG_INDEX_URL
+            )
+
+    def test_expand_design_rorig_enumerates_lineid(self, tmp_path):
+        from stellarlib.models.bosz.design import BOSZ_ADAPTER
+
+        designs = {
+            d.directory_name: d
+            for d in BOSZ_ADAPTER.designs({"family": "bosz"})
+        }
+        design = designs["bosz/rorig/m+0.00"]
+        (tmp_path / RORIG_SCRIPT_NAME).write_bytes(
+            _rorig_script_text(RORIG_NODE_NAMES)
+        )
+        # the script alone enumerates the spectra; lineid wait for the index
+        spectra_only = BOSZ_ADAPTER.expand_design(design, tmp_path)
+        assert len(spectra_only.parts) == 2 + len(RORIG_NODE_NAMES)
+        assert not any(p.role == "lineid" for p in spectra_only.parts)
+        (tmp_path / "directory_index.html").write_bytes(
+            _rorig_index_html(LINEID_NAMES, RORIG_NODE_NAMES)
+        )
+        expanded = BOSZ_ADAPTER.expand_design(design, tmp_path)
+        assert len(expanded.parts) == (
+            2 + len(RORIG_NODE_NAMES) + len(LINEID_NAMES)
+        )
+        lineid_parts = [p for p in expanded.parts if p.role == "lineid"]
+        assert [p.name for p in lineid_parts] == LINEID_NAMES
+        assert all(p.url == f"{RORIG_INDEX_URL}{p.name}" for p in lineid_parts)
+        # re-expansion is idempotent
+        again = BOSZ_ADAPTER.expand_design(expanded, tmp_path)
+        assert again.parts == expanded.parts
 
     def test_wave_product_lists_all_seven_grids(self):
         from stellarlib.models.bosz.design import BOSZ_ADAPTER
@@ -347,6 +457,58 @@ class TestBuild:
         assert notes["selection"]["files_total"] == 4
         assert notes["selection"]["vmicro"] == "family"
         assert notes["wave_file"].endswith(WAVE_NAME)
+
+    def test_build_fetches_rorig_mirror_with_lineid(self, tmp_path):
+        import hashlib
+
+        lineid_bytes = _gz_text(["507.718 HeI 1.1", "522.213 HeI 6.1"])
+        noresam_bytes = _gz_text(["1000.0 1.0 1.0", "1001.0 0.9 1.0"])
+        session = FakeSession(
+            {
+                RORIG_SCRIPT_URL: _rorig_script_text(RORIG_NODE_NAMES),
+                RORIG_INDEX_URL: _rorig_index_html(
+                    LINEID_NAMES, RORIG_NODE_NAMES
+                ),
+                **{
+                    f"{RORIG_INDEX_URL}{name}": lineid_bytes
+                    for name in LINEID_NAMES
+                },
+                **{
+                    f"{RORIG_INDEX_URL}{name}": noresam_bytes
+                    for name in RORIG_NODE_NAMES
+                },
+            }
+        )
+        build_database(
+            tmp_path, declarations=[{"family": "bosz"}], session=session
+        )
+        directory = tmp_path / "bosz" / "rorig" / "m+0.00"
+        manifest = read_manifest(directory)
+        # the directory index itself arrived and is checksum-recorded
+        index_entry = manifest["parts"]["directory_index.html"]
+        assert index_entry["url"] == RORIG_INDEX_URL
+        assert (
+            index_entry["sha256"]
+            == hashlib.sha256(
+                _rorig_index_html(LINEID_NAMES, RORIG_NODE_NAMES)
+            ).hexdigest()
+        )
+        # every enumerated file arrived: spectra from the script, lineid
+        # from the index
+        assert (
+            len(manifest["parts"])
+            == 2 + len(RORIG_NODE_NAMES) + len(LINEID_NAMES)
+        )
+        for name in LINEID_NAMES:
+            entry = manifest["parts"][name]
+            assert entry["sha256"] == hashlib.sha256(lineid_bytes).hexdigest()
+            assert (directory / name).read_bytes() == lineid_bytes
+        # the scan judges the completed mirror against the full design
+        report = scan_database(tmp_path)
+        mirror = next(
+            p for p in report.products if p.label_path == "bosz/rorig/m+0.00"
+        )
+        assert mirror.state == "complete"
 
     def test_second_build_keeps_verified(self, tmp_path):
         session = _mirror_session()

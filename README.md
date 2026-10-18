@@ -83,7 +83,8 @@ block = stellarlib.materialize.materialize_grid(grid, "block")   # npz + sources
 Build a local database as a mirror of the complete upstream library.
 The blueprint is a family-level declaration — it always covers every
 official package the source publishes (BOSZ: all 112 (broadening,
-metallicity) directory mirrors + the shared wavelength grids; TLUSTY:
+metallicity) directory mirrors — the rorig ones include the
+line-identification files — plus the shared wavelength grids; TLUSTY:
 all 20 per-composition vispec tars) — and `build_database` completes
 what is missing, one whole unit at a time (`dry_run` first):
 

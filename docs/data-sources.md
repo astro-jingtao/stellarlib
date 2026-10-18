@@ -13,45 +13,75 @@ snapshot of the landing page are archived in
 [upstream/bosz2024/](upstream/bosz2024/) (CC BY 4.0, per the landing
 page).
 
-### Release tree (verified live 2026-10-17; bulk packaging 2026-10-18)
+### Release tree (verified live 2026-10-17; counts and indexes 2026-10-18)
 
 - `.../bosz2024/r<R>/<metallicity>/<file>` with R ∈ {500, 1000, 2000,
   5000, 10000, 20000, 50000} (plus `rorig/`, the original-sampling
   variant) and 14 metallicity directories `m+0.75` ... `m-2.50`.
 - Wavelength grids live in `.../bosz2024/wavelength_grids/
-  bosz2024_wave_r<R>.txt` — one file per resolution, not per metallicity.
-- One (R, [M/H]) directory holds 45,724 spectrum files: the (Teff,
-  log g) nodes interleaved with their [a/M] (−0.25/0/+0.25), [C/M]
-  (−0.75/−0.25/0/+0.25), and vmicro (0/1/2/4 km/s) variants. The
-  directories are the upstream publishing units; a stellarlib product
-  is one directory's complete mirror (below).
+  bosz2024_wave_r<R>.txt` — one file per numbered resolution, not per
+  metallicity; rorig needs none (its files carry their own wavelength
+  column).
+- One (R, [M/H]) directory holds one spectrum file per (node,
+  composition, vmicro): the (Teff, log g) nodes interleaved with their
+  [a/M] (−0.25/0/+0.25/+0.50), [C/M] (−0.75/−0.50/−0.25/0/+0.25/+0.50),
+  and vmicro (0/1/2/4 km/s) variants — 24 compositions, the README's
+  "336 unique compositions" with the 14 metallicities. The count differs
+  by metallicity (all 14 rorig scripts downloaded and counted:
+  43,204 at m-2.25 up to 45,724 at m+0.00; 628,620 in total — the
+  README states the same total). The directories are the upstream
+  publishing units; a stellarlib product is one directory's complete
+  mirror (below).
 - Eight r500 files downloaded 2026-10-17 and checksum-recorded in the
   catalog (sizes 40,499–42,308 bytes); the network test re-verifies
   them.
+- Official documentation is archived verbatim in
+  [upstream/bosz2024/](upstream/bosz2024/) — the release-tree README
+  (note: no "2024" in its filename; the landing page's own Read Me link
+  inserts one and 404s) and a dated snapshot of the landing page. The
+  README records a 2025-09-24 recomputation of the whole grid (OH+
+  partition-function fix; higher-level hydrogen atom) — the served files
+  are that recomputed set, and stellarlib's checksums were taken against
+  it. The release root also carries a `readme.txt~` editor leftover,
+  recorded and never mirrored.
 
 ### Official bulk packages (verified live 2026-10-18)
 
 - MAST publishes one official bulk-download script per directory:
   `.../download_scripts/hlsp_bosz_bosz2024_sim_r<R>_m{±d.dd}_v1_bulkdl.sh`
   — 112 scripts (8 broadenings × 14 metallicities), each a plain list of
-  per-file `curl` commands enumerating that directory's complete content
-  (45,724 spectra; counted on r500, r10000, rorig at m+0.00). No
+  per-file `curl` commands enumerating that directory's complete spectrum
+  content (resam for the numbered resolutions, noresam for rorig). No
   directory-level tarballs exist (probes 404). The script is upstream's
   own manifest of the directory: stellarlib mirrors whole directories by
   fetching the script first and then every file it lists — the complete
   official package, never a subset.
-- The rorig directories additionally hold line-identification files
-  (11,431 per directory, v0 spectra only, three columns
-  wavelength/line IDs/equivalent width) that the official scripts do not
-  include — a separate upstream product line outside the spectral
-  mirror.
+- The rorig directories additionally hold the line-identification
+  product line — one `_lineid.txt.gz` per v0 spectrum (three columns:
+  wavelength, line-ID string, equivalent width; lines with W < 0.1 Å are
+  not listed), i.e. exactly one quarter of the directory's spectra
+  (11,431 at m+0.00, 10,829 at m-2.50; 157,155 in total). The official
+  scripts omit them, and the one script that nominally covers them
+  (`hlsp_bosz_bosz2024_sim_rorig_all_v1_bulkdl-lineids.sh`, "all" in the
+  landing-page table) is an upstream defect: it lists m-2.50 only. The
+  complete authoritative listing that includes the lineid files is the
+  directory's own Apache index (served at the directory URL; verified to
+  list exactly the spectra plus the lineid files and nothing else, with
+  the lineid set equal to the script's v0 names with the product slot
+  swapped). Each rorig mirror therefore fetches and caches that index as
+  a designed part (`directory_index.html`) and enumerates the lineid
+  parts from it — the lineid files are auxiliary data inside the rorig
+  mirror products, on the same two-state fetch/scan/retry semantics as
+  everything else.
 - Library scale (the blueprint declares all of it; one HEAD-sampled file
   size per resolution, gz sizes vary with model): r500 ≈ 43 KB and
-  r10000 ≈ 650 KB per file, rorig ≈ 17 MB. Full 112-directory mirror =
-  5,121,088 files, order 10 TB (rorig alone dominates). The per-part
-  fetch, two-state scan, and retry semantics are unchanged by scale; the
-  design never subsets, and how much is fetched at once is the builder's
-  iteration order, not a design axis.
+  r10000 ≈ 650 KB per file, rorig ≈ 17 MB, lineid ≈ 0.9 MB. Spectra
+  total 5,028,960 files across the 112 directories, order 14 TB, of
+  which the rorig directories alone hold 628,620 files ≈ 10.5 TB (~74%,
+  the dominant share); lineid adds 157,155 files ≈ 0.15 TB. The
+  per-part fetch, two-state scan, and retry semantics are unchanged by
+  scale; the design never subsets, and how much is fetched at once is
+  the builder's iteration order, not a design axis.
 
 ### File format (verified against downloads)
 
@@ -63,6 +93,12 @@ page).
   (wavelength, flux) parsing silently produces flux-vs-continuum
   garbage — the reader therefore never guesses, and the pairing is an
   explicit set-construction decision.
+- rorig "noresam" files are three-column (wavelength, H_lambda,
+  continuum) at the synthesis's native sampling (R ≈ 200,000–600,000,
+  varying per model); "lineid" files are three-column (wavelength,
+  line-ID string, equivalent width). The spectrum readers currently
+  recognize the resam grammar only — mirroring rorig is supported,
+  opening it as a grid is not (yet).
 - Wavelengths are vacuum below 200 nm and air above; never converted.
 
 ### Upstream clipping is the library's own — preserved verbatim

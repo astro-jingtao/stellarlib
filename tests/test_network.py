@@ -70,6 +70,24 @@ class TestBoszCatalog:
             "wavelength_grids/bosz2024_wave_r500.txt"
         )
 
+    def test_rorig_surface_live(self):
+        # the rorig lineid channel: the directory's own Apache index (the
+        # complete listing the official bulkdl scripts omit) and one
+        # lineid file; plus the official README at its real URL (no
+        # "2024" in the filename — the landing page's own link is broken)
+        assert _head_ok(
+            "https://archive.stsci.edu/hlsps/bosz/bosz2024/rorig/m+0.00/"
+        )
+        assert _head_ok(
+            "https://archive.stsci.edu/hlsps/bosz/bosz2024/rorig/m+0.00/"
+            "bosz2024_mp_t5000_g+5.0_m+0.00_a+0.00_c+0.00_v0_rorig_"
+            "lineid.txt.gz"
+        )
+        assert _head_ok(
+            "https://archive.stsci.edu/hlsps/bosz/bosz2024/"
+            "hlsp_bosz_bosz_sim_all_all_v1_readme.txt"
+        )
+
 
 class TestTlustyCatalog:
     # the vispec tar inventory, live-verified 2026-10-18 (catalog

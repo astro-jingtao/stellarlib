@@ -151,9 +151,15 @@ publishes (the verified facts and scales live in docs/data-sources.md):
 
 - **BOSZ** publishes one directory per (broadening, metallicity) and an
   official bulk-download script per directory — upstream's own manifest
-  of its 45,724 spectra. A product is that whole directory mirror: the
-  script is fetched first (a designed part, cached under its upstream
-  name) and expanded in-build to the complete file list; the shared
+  of that directory's spectra (45,724 at m+0.00; the count differs by
+  metallicity, 628,620 in total per broadening). A product is that whole
+  directory mirror: the script is fetched first (a designed part, cached
+  under its upstream name) and expanded in-build to the complete file
+  list. The rorig directories additionally hold the line-identification
+  product line, which the official scripts omit: each rorig mirror also
+  fetches the directory's own Apache index (cached as
+  `directory_index.html`) — the one complete authoritative listing that
+  includes the lineid files — and enumerates them from it. The shared
   wavelength grids mirror as their own product and pair automatically
   at grid-open. The blueprint declares all 112 directories.
 - **TLUSTY** publishes per-composition vispec tar archives holding both

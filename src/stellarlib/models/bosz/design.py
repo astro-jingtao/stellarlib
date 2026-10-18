@@ -6,9 +6,15 @@ upstream's own manifest listing every spectrum file of that directory.
 A stellarlib product is therefore one directory's complete mirror: the
 design fetches the official script first (a designed part in its own
 right, cached in the product directory under its upstream name), then
-every file the script lists. The blueprint declares all 112 directory
-mirrors plus the ``wavelength_grids`` directory; no subset enumeration
-exists anywhere on the fetch path.
+every file the script lists. The rorig directories additionally hold
+line-identification files that no bulkdl script covers (the one official
+``bulkdl-lineids.sh`` names "all" but lists m-2.50 only — an upstream
+defect); their complete authoritative listing is the directory's own
+Apache index, which the rorig mirrors therefore also fetch and cache as
+a designed part (``directory_index.html``), and the lineid files enter
+the blueprint from it. The blueprint declares all 112 directory mirrors
+plus the ``wavelength_grids`` directory; no subset enumeration exists
+anywhere on the fetch path.
 
 Query-side publication knowledge stays in ``family_for`` (the confirmed
 atmosphere-family and vmicro assignment): grids opened over a mirror
@@ -45,6 +51,7 @@ __all__ = [
     "bosz_filename",
     "family_for",
     "bulkdl_script_name",
+    "parse_directory_index",
     "BOSZ_BROADENINGS",
     "BOSZ_METALLICITIES",
 ]
@@ -80,6 +87,12 @@ _WAVE_FILES = tuple(
 _CURL_LINE_RE = re.compile(
     r'^curl\s+.*--output\s+"([^"]+)"\s+"(https://[^"]+)"'
 )
+
+# The cached copy of one directory's Apache index (upstream serves the
+# listing at the directory URL itself, under no filename of its own).
+_DIRECTORY_INDEX_NAME = "directory_index.html"
+_INDEX_HREF_RE = re.compile(r'<a href="([^"]+)">')
+_INDEX_PRODUCT_RE = re.compile(r"_(resam|noresam|lineid)\.txt\.gz$")
 
 
 def family_for(teff: int, logg: float) -> tuple[str, int]:
@@ -165,21 +178,74 @@ def parse_bulkdl_script(text: str) -> tuple[tuple[str, str], ...]:
     return tuple(pairs)
 
 
+def parse_directory_index(
+    text: str, directory_url: str
+) -> tuple[tuple[str, str], ...]:
+    """Extract every line-identification (filename, url) pair from the
+    Apache index of one rorig directory.
+
+    The index is upstream's own complete listing of the directory — the
+    only official channel that includes the lineid files. Every listed
+    file must carry a known product slot (resam, noresam, lineid);
+    anything else means the release changed and the catalog needs
+    re-verification (a hard error, never a partially-adopted list). Only
+    the lineid files are returned: the spectra come from the official
+    bulkdl script (the package definition), so the script stays the
+    spectra manifest and the index supplies what the package omits.
+    """
+    directory_url = directory_url if directory_url.endswith("/") else directory_url + "/"
+    pairs = []
+    kinds_seen = set()
+    for match in _INDEX_HREF_RE.finditer(text):
+        href = match.group(1)
+        if href.endswith("/"):
+            continue  # parent/subdirectory navigation
+        name = href.rsplit("/", 1)[-1]
+        slot_match = _INDEX_PRODUCT_RE.search(name)
+        if slot_match is None:
+            raise ValueError(
+                f"directory index lists {name!r}, which carries no known "
+                "BOSZ product slot (resam/noresam/lineid) — the release "
+                "changed; re-verify the catalog"
+            )
+        kinds_seen.add(slot_match.group(1))
+        if slot_match.group(1) == "lineid":
+            pairs.append((name, directory_url + name))
+    if "lineid" not in kinds_seen:
+        raise ValueError(
+            "directory index lists no lineid files — this is not an rorig "
+            "directory index; re-verify the catalog"
+        )
+    return tuple(pairs)
+
+
 def _directory_design(broadening: int | str, mh: float) -> ProductDesign:
     name = _BROADENING_NAMES[broadening]
     script = bulkdl_script_name(broadening, mh)
+    parts = [
+        PartDesign(
+            name=script,
+            url=f"{_BASE}/download_scripts/{script}",
+            role="bulk_manifest",
+        )
+    ]
+    if name == "rorig":
+        # the rorig directories hold the lineid product line, which the
+        # official bulkdl scripts omit; the directory's own Apache index
+        # is its complete authoritative listing
+        parts.append(
+            PartDesign(
+                name=_DIRECTORY_INDEX_NAME,
+                url=f"{_BASE}/rorig/{_metallicity_directory(mh)}/",
+                role="directory_index",
+            )
+        )
     return ProductDesign(
         family="bosz",
         collection=name,
         label=_metallicity_directory(mh),
         kind="official_mirror",
-        parts=(
-            PartDesign(
-                name=script,
-                url=f"{_BASE}/download_scripts/{script}",
-                role="bulk_manifest",
-            ),
-        ),
+        parts=tuple(parts),
         facts={"broadening": name, "metallicity": mh},
     )
 
@@ -220,19 +286,42 @@ class BoszAdapter:
     def expand_design(
         self, design: ProductDesign, directory: Path
     ) -> ProductDesign:
-        """Replace the phase-1 part (the bulkdl script) with the script
-        plus every file it lists, once the script is cached in the
-        product directory."""
+        """Replace the phase-1 parts (the bulkdl script, and for rorig
+        directories the Apache index) with the phase-1 parts plus every
+        file they enumerate, once each is cached in the product
+        directory."""
         if design.facts.get("metallicity") is None:
             return design  # wavelength_grids product needs no expansion
-        script = directory / design.parts[0].name
-        if not script.is_file():
-            return design
-        listed = parse_bulkdl_script(script.read_text(encoding="utf-8"))
-        parts = (design.parts[0],) + tuple(
-            PartDesign(name=name, url=url) for name, url in listed
+        parts = list(design.parts)
+        script_part = next(p for p in parts if p.role == "bulk_manifest")
+        script = directory / script_part.name
+        if script.is_file():
+            listed = parse_bulkdl_script(script.read_text(encoding="utf-8"))
+            known = {p.name for p in parts}
+            parts += [
+                PartDesign(name=name, url=url)
+                for name, url in listed
+                if name not in known
+            ]
+        index_part = next(
+            (p for p in parts if p.role == "directory_index"), None
         )
-        return dataclasses.replace(design, parts=parts)
+        if index_part is not None and index_part.url:
+            index = directory / index_part.name
+            if index.is_file():
+                listed = parse_directory_index(
+                    index.read_text(encoding="utf-8", errors="replace"),
+                    index_part.url,
+                )
+                known = {p.name for p in parts}
+                parts += [
+                    PartDesign(name=name, url=url, role="lineid")
+                    for name, url in listed
+                    if name not in known
+                ]
+        if len(parts) == len(design.parts):
+            return design
+        return dataclasses.replace(design, parts=tuple(parts))
 
     def design_of_manifest(
         self, manifest: Mapping, directory: Path

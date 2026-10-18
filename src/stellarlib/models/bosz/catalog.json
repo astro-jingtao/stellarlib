@@ -2,27 +2,48 @@
   "schema_version": 1,
   "family": "bosz",
   "release": "2024",
-  "description": "BOSZ 2024 release tree at MAST (HLSP), verified live 2026-10-17 (bulk-download surface 2026-10-18). The upstream publishing unit is one (broadening, metallicity) directory; its official bulk package is the per-directory bulkdl.sh script — a plain list of per-file curl commands covering every spectrum file of that directory. stellarlib mirrors whole directories: one product = one (broadening, metallicity) directory as enumerated by its official bulkdl script, plus one shared product for the wavelength_grids directory. The blueprint declares all 112 directory mirrors.",
+  "description": "BOSZ 2024 release tree at MAST (HLSP), verified live 2026-10-17 (bulk-download surface, directory indexes, official README 2026-10-18). The upstream publishing unit is one (broadening, metallicity) directory; its official bulk package is the per-directory bulkdl.sh script — a plain list of per-file curl commands covering every spectrum file of that directory. The rorig directories additionally hold the line-identification product line, which the official scripts omit; its complete authoritative listing is the directory's own Apache index, mirrored as a designed part (directory_index.html). stellarlib mirrors whole directories: one product = one (broadening, metallicity) directory — spectra as enumerated by the official bulkdl script, lineid files as enumerated by the directory index — plus one shared product for the wavelength_grids directory. The blueprint declares all 112 directory mirrors.",
   "base_url": "https://archive.stsci.edu/hlsps/bosz/bosz2024",
   "readme_url": "https://archive.stsci.edu/hlsps/bosz/bosz2024/hlsp_bosz_bosz_sim_all_all_v1_readme.txt",
+  "landing_page_url": "https://archive.stsci.edu/hlsp/bosz",
+  "doi": "https://dx.doi.org/10.17909/T95G68",
+  "license": "CC BY 4.0 (stated on the landing page)",
+  "archived_docs": "docs/upstream/bosz2024/ (verbatim README + dated landing-page snapshot, byte-identical under git attribute -text)",
   "url_templates": {
     "spectrum": "{base_url}/r{resolution}/m{mh:+.2f}/{filename}",
+    "lineid": "{base_url}/rorig/m{mh:+.2f}/{filename}",
+    "directory_index": "{base_url}/rorig/m{mh:+.2f}/",
     "wavelength_grid": "{base_url}/wavelength_grids/bosz2024_wave_r{resolution}.txt",
     "bulkdl_script": "{base_url}/download_scripts/hlsp_bosz_bosz2024_sim_r{resolution}_m{mh:+.2f}_v1_bulkdl.sh"
   },
   "verified": {
     "date": "2026-10-18",
     "resolutions": [500, 1000, 2000, 5000, 10000, 20000, 50000],
-    "note_original_sampling": "rorig/ holds the original-sampling variant (noresam files, own wavelength column)",
+    "note_original_sampling": "rorig/ holds the original-sampling variant (noresam files, own wavelength column); original resolution varies per model, ~200,000-600,000",
     "metallicities_all": [
       0.75, 0.5, 0.25, 0.0, -0.25, -0.5, -0.75, -1.0, -1.25, -1.5, -1.75,
       -2.0, -2.25, -2.5
     ],
     "bulk_download_surface": {
       "verified": "2026-10-18: 112 scripts listed under download_scripts/, one per (broadening, metallicity); no directory-level tarballs exist (probes 404)",
-      "files_per_script": "45724 spectrum files each (resam for r500..r50000, noresam for rorig; counted on r500, r10000, rorig at m+0.00)",
-      "lineid_exclusion": "rorig directories additionally hold 11431 lineid files (line identifications, v0 only) that the official bulkdl scripts do not include — a separate upstream product line, outside the spectra mirror"
+      "files_per_script": "spectra per directory differ by metallicity (all 14 rorig scripts downloaded and counted 2026-10-18; numbered directories hold the same node structure — r500 m+0.00 verified 45,724 = its rorig counterpart)",
+      "spectra_per_metallicity": {
+        "m+0.75": 44840, "m+0.50": 45172, "m+0.25": 45456, "m+0.00": 45724,
+        "m-0.25": 45556, "m-0.50": 45600, "m-0.75": 45396, "m-1.00": 45392,
+        "m-1.25": 45276, "m-1.50": 45100, "m-1.75": 44600, "m-2.00": 43988,
+        "m-2.25": 43204, "m-2.50": 43316
+      },
+      "spectra_total": "628,620 per broadening — the official README states the same number; the sum of the 14 counted scripts equals it exactly"
     },
+    "lineid_product_line": {
+      "official_description": "README: three columns (wavelength in Angstroms, a string of line identifications, equivalent width W in Angstroms); weak lines with W < 0.1 Angstroms are not listed; only for rorig, one file per v0 spectrum",
+      "count_per_directory": "= the v0 spectrum count = spectra/4 (11,431 at m+0.00, 10,829 at m-2.50; total 157,155 across the 14 metallicities)",
+      "official_packaging_defective": "download_scripts/hlsp_bosz_bosz2024_sim_rorig_all_v1_bulkdl-lineids.sh is named 'all' (landing-page table: 'all_lineids') but lists 10,829 files, m-2.50 only; per-metallicity variants do not exist (probes 404) — it cannot anchor the product line",
+      "authoritative_listing": "the directory's own Apache index (served at the directory URL): rorig/m+0.00 lists exactly 45,724 noresam + 11,431 lineid and nothing else; the lineid set equals the script's v0 names with the product slot swapped (set equality verified on m+0.00 and m-2.50); stellarlib caches it as part directory_index.html and enumerates lineid parts from it",
+      "sample_file": "bosz2024_mp_t5000_g+5.0_m+0.00_a+0.00_c+0.00_v0_rorig_lineid.txt.gz (949,258 bytes, downloaded and inspected 2026-10-18)"
+    },
+    "recomputation_2025_09_24": "README update notice: all models were recomputed (OH+ partition-function fix; higher-level hydrogen atom, H lines now present to 32 micron). The files served since are the recomputed set; stellarlib's checksums were taken against it.",
+    "root_tree_quirk": "the release root additionally publishes hlsp_bosz_bosz_sim_all_all_v1_readme.txt~ (editor leftover beside the README); recorded, never mirrored. The landing page's own 'Read Me' link inserts a wrong '2024' into the filename and 404s.",
     "sample_file_sizes_bytes_per_resolution": {
       "note": "one HEAD sample per resolution at m+0.00 (gz size varies with model); order-of-magnitude scale, not an inventory",
       "r500": 42554,
@@ -35,9 +56,10 @@
       "rorig": 16760266
     },
     "filename_variant_axes": {
-      "a": [-0.25, 0.0, 0.25],
-      "c": [-0.75, -0.25, 0.0, 0.25],
-      "v": [0, 1, 2, 4]
+      "a": [-0.25, 0.0, 0.25, 0.5],
+      "c": [-0.75, -0.5, -0.25, 0.0, 0.25, 0.5],
+      "v": [0, 1, 2, 4],
+      "note": "enumerated from the rorig m+0.00 script's 45,724 names (2026-10-18); matches the README's stated ranges ([a/M] -0.25 to +0.5, [C/M] -0.75 to +0.5, vmicro 0/1/2/4 km/s); 24 compositions x 14 metallicities = the README's '336 unique compositions'"
     },
     "sample_files_verified": {
       "bosz2024_ms_t3500_g+1.0_m+0.00_a+0.00_c+0.00_v2_r500_resam.txt.gz": 40987,
@@ -54,11 +76,12 @@
       "bosz2024_wave_r2000.txt", "bosz2024_wave_r5000.txt",
       "bosz2024_wave_r10000.txt", "bosz2024_wave_r20000.txt",
       "bosz2024_wave_r50000.txt"
-    ]
+    ],
+    "wavelength_grids_note": "seven files, one per numbered resolution; rorig needs none (noresam files carry their own wavelength column)"
   },
   "format_notes": [
     "resam files are two-column gzip ASCII (Eddington flux H_lambda, continuum) with no wavelength column; rows align by index with the per-resolution wavelength grid file",
-    "rorig noresam files carry their own wavelength column (three columns)",
+    "rorig noresam files carry their own wavelength column (three columns: wavelength, H_lambda, continuum); lineid files are three-column (wavelength, line-ID string, equivalent width)",
     "wavelength grids are log-uniform; r500 spans 500 Angstrom to 31.97 micron in 7500 points, r10000 in 150000 points",
     "upstream clips H_lambda below 1e-6 erg/s/cm^2/Angstrom to zero (continuum to 1); no checksums are published"
   ],

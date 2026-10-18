@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.1.2 (2026-10-18)
+
+The rorig line-identification product line enters the blueprint, and the
+BOSZ catalog facts are re-verified against the official documentation.
+
+- BOSZ rorig mirrors now include the lineid files: each rorig product
+  fetches the directory's own Apache index as a designed part
+  (`directory_index.html`, role `directory_index`) — the one complete
+  authoritative listing that includes them, since the official bulkdl
+  scripts omit the lineid product line and the nominally covering
+  `bulkdl-lineids.sh` is an upstream defect ("all" in name, m-2.50 only
+  in content) — and enumerates one `lineid` part per v0 spectrum from
+  it, on the same fetch/scan/retry semantics as every other part.
+- Catalog corrections (all re-verified live 2026-10-18 against the
+  official README, the landing page, all 14 rorig bulkdl scripts, and
+  the directory indexes): spectra per directory differ by metallicity
+  (43,204…45,724; 628,620 total, equal to the README's stated total —
+  the previous "45,724 everywhere / 5,121,088 files" figures were the
+  m+0.00 values over-generalized); variant axes are [a/M]
+  −0.25…+0.50 and [C/M] −0.75…+0.50; the README's real URL carries no
+  "2024" in its filename. The README's 2025-09-24 recomputation notice
+  and the CC BY 4.0 license are recorded.
+- Official upstream documentation (README + dated landing-page snapshot)
+  is archived verbatim under `docs/upstream/bosz2024/`, kept
+  byte-identical via a `-text` git attribute.
+
 ## 0.1.1 (2026-10-18)
 
 The database acquires whole official packages, never subsets. The
