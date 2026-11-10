@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Part classification gained a size fast path: a present part whose
+  recorded `size_bytes` (written at fetch time on every part) matches
+  the file's size is classified ok without reading a byte. Any
+  disagreement — or a manifest record without a size — falls through
+  to the sha256 authority as before (a stale size with intact content
+  still clears; a tampered file is still nonconforming). This turns an
+  incremental build against a large existing database from a full
+  re-hash of all present bytes (measured: hours of verification I/O on
+  an 814-GB mirror) into a stat-only pass before the first fetch.
+
 - `build_database` gains `workers=`: bounded parallelism for one
   product's fetch pass (default 1, strictly sequential). A
   `workers > 1` pass fetches pending parts through that many worker

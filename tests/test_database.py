@@ -18,7 +18,11 @@ import pytest
 
 from stellarlib.database.build import build_database, register_local_product
 from stellarlib.database.core import open_database
-from stellarlib.database.design import VerdictKind
+from stellarlib.database.design import (
+    PartDesign,
+    VerdictKind,
+    classify_part_generic,
+)
 from stellarlib.database.manifest import (
     MANIFEST_SCHEMA,
     empty_manifest,
@@ -400,6 +404,70 @@ def _sha_str(payload: bytes) -> str:
     import hashlib
 
     return hashlib.sha256(payload).hexdigest()
+
+
+class TestCheapPartVerdict:
+    """The size fast path of classify_part_generic: a recorded
+    size_bytes that matches clears a present part without reading a
+    byte; any disagreement (or a record without a size) falls through
+    to the sha256 authority."""
+
+    def _classify(self, tmp_path, *, size_entry, payload=None, part=None):
+        part = part or SOLAR_NAMES[0]
+        payload = payload if payload is not None else (
+            DATA / part).read_bytes()
+        (tmp_path / part).write_bytes(payload)
+        entry = {"file": part, "sha256": _sha(DATA / part)}
+        if size_entry == "match":
+            entry["size_bytes"] = (DATA / part).stat().st_size
+        elif size_entry == "stale":
+            entry["size_bytes"] = (DATA / part).stat().st_size + 1
+        elif size_entry is not None:
+            raise AssertionError(size_entry)
+        return classify_part_generic(
+            design=None,
+            part=PartDesign(name=part),
+            directory=tmp_path,
+            manifest={"parts": {part: entry}},
+        )
+
+    def test_matching_size_is_ok_without_hashing(
+            self, tmp_path, monkeypatch):
+        import stellarlib.database.design as design_mod
+
+        def _forbidden(*args, **kwargs):
+            raise AssertionError("fast path must not hash")
+
+        monkeypatch.setattr(design_mod, "sha256_file", _forbidden)
+        verdict = self._classify(tmp_path, size_entry="match")
+        assert verdict.kind == VerdictKind.OK
+
+    def test_stale_size_falls_through_to_sha_authority(self, tmp_path):
+        # a stale size with intact content: the sha256 clears the part
+        verdict = self._classify(tmp_path, size_entry="stale")
+        assert verdict.kind == VerdictKind.OK
+
+    def test_tampered_file_is_nonconforming(self, tmp_path):
+        verdict = self._classify(tmp_path, size_entry="stale",
+                                 payload=b"tampered")
+        assert verdict.kind == VerdictKind.NONCONFORMING
+        assert "sha256" in verdict.reasons[0]
+
+    def test_record_without_size_hashes(self, tmp_path):
+        # legacy entries (no size_bytes) keep the sha256-only semantics
+        verdict = self._classify(tmp_path, size_entry=None)
+        assert verdict.kind == VerdictKind.OK
+
+    def test_absent_part_is_missing_regardless_of_records(
+            self, tmp_path):
+        part = SOLAR_NAMES[1]
+        verdict = classify_part_generic(
+            design=None,
+            part=PartDesign(name=part),
+            directory=tmp_path,
+            manifest={"parts": {}},
+        )
+        assert verdict.kind == VerdictKind.MISSING
 
 
 class TestBuild:

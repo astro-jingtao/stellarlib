@@ -96,9 +96,16 @@ def classify_part_generic(
 
     missing: the file is absent (a recorded failed fetch keeps the part
     missing — nothing is inferred from an HTTP status, and the builder
-    retries it on the next run). nonconforming: present but its sha256
-    disagrees with the recorded one (integrity). ok: present and
-    matching.
+    retries it on the next run). nonconforming: present but failing the
+    recorded integrity evidence. ok: present and passing.
+
+    The cheap path first: a part whose recorded ``size_bytes`` matches
+    the file's size is ok without reading a byte (the size is recorded
+    at fetch time on every part). Any disagreement — or a record without
+    ``size_bytes`` — falls through to the sha256 authority: a full read
+    that either clears the part (a stale size with intact content) or
+    marks it nonconforming. The sha256 stays recorded for exactly these
+    authoritative passes; sizes only ever gate them.
     """
     path = directory / part.name
     recorded = (manifest.get("parts") or {}).get(part.name)
@@ -106,6 +113,9 @@ def classify_part_generic(
         return PartVerdict(part=part.name, kind=VerdictKind.MISSING)
     expected = (recorded or {}).get("sha256")
     if expected is None:
+        return PartVerdict(part=part.name, kind=VerdictKind.OK)
+    size_expected = (recorded or {}).get("size_bytes")
+    if size_expected is not None and path.stat().st_size == size_expected:
         return PartVerdict(part=part.name, kind=VerdictKind.OK)
     actual = sha256_file(path)
     if actual.lower() != str(expected).lower():
