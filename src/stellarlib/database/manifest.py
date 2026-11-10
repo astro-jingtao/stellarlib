@@ -45,11 +45,8 @@ def write_manifest(directory: Path, manifest: Mapping) -> None:
     _validate(manifest, manifest_path(directory))
     path = manifest_path(directory)
     tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(
-        json.dumps(manifest, indent=2, sort_keys=True),
-        encoding="utf-8",
-        newline="\n",
-    )
+    with open(tmp, "w", encoding="utf-8", newline="\n") as _f:
+        _f.write(json.dumps(manifest, indent=2, sort_keys=True))
     tmp.replace(path)
 
 

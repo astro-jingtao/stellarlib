@@ -138,9 +138,8 @@ def materialize_grid(
         "sources": sources,
     }
     sidecar_path = npz_path.with_name(npz_path.name + _SIDECAR_SUFFIX)
-    sidecar_path.write_text(
-        json.dumps(sidecar, indent=2), encoding="utf-8", newline="\n"
-    )
+    with open(sidecar_path, "w", encoding="utf-8", newline="\n") as _f:
+        _f.write(json.dumps(sidecar, indent=2))
     return open_materialized(npz_path)
 
 

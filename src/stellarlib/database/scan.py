@@ -270,11 +270,7 @@ def scan_database(
 
 def write_status(report: DatabaseReport) -> None:
     """Write db_status.md and db_status.json (regenerated, never copied)."""
-    (report.root / "db_status.json").write_text(
-        json.dumps(report.to_dict(), indent=2, sort_keys=True),
-        encoding="utf-8",
-        newline="\n",
-    )
-    (report.root / "db_status.md").write_text(
-        report.render_markdown(), encoding="utf-8", newline="\n"
-    )
+    with open(report.root / "db_status.json", "w", encoding="utf-8", newline="\n") as _f:
+        _f.write(json.dumps(report.to_dict(), indent=2, sort_keys=True))
+    with open(report.root / "db_status.md", "w", encoding="utf-8", newline="\n") as _f:
+        _f.write(report.render_markdown())

@@ -85,18 +85,15 @@ def refresh_inventory(root: Path) -> None:
             if citation not in seen:
                 seen.add(citation)
                 lines.append(f"- {citation}")
-    (root / "README.md").write_text(
-        "\n".join(lines) + "\n", encoding="utf-8", newline="\n"
-    )
-    (root / "unified-parameters.md").write_text(
-        render_documentation(), encoding="utf-8", newline="\n"
-    )
+    with open(root / "README.md", "w", encoding="utf-8", newline="\n") as _f:
+        _f.write("\n".join(lines) + "\n")
+    with open(root / "unified-parameters.md", "w", encoding="utf-8", newline="\n") as _f:
+        _f.write(render_documentation())
     write_status(scan_database(root))
 
 
 def _atomic_write_json(path: Path, payload: dict) -> None:
     tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(
-        json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8", newline="\n"
-    )
+    with open(tmp, "w", encoding="utf-8", newline="\n") as _f:
+        _f.write(json.dumps(payload, indent=2, sort_keys=True))
     tmp.replace(path)

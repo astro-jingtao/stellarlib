@@ -7,7 +7,7 @@ name = "stellarlib"
 version = "0.1.2"
 description = "Faithful and unified access to theoretical stellar spectral libraries."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.9"
 license = { text = "MIT" }
 authors = [{ name = "astro-jingtao" }]
 keywords = [

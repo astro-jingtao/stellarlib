@@ -105,9 +105,8 @@ def _write_designs(root: Path, declarations: list[dict]) -> None:
         "official packages; build_database completes what is missing",
         "blueprint": declarations,
     }
-    path.write_text(
-        json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8", newline="\n"
-    )
+    with open(path, "w", encoding="utf-8", newline="\n") as _f:
+        _f.write(json.dumps(payload, indent=2, sort_keys=True))
 
 
 def _release_of(family: str, collection: str) -> str:

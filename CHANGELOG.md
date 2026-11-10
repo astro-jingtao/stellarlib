@@ -11,6 +11,11 @@
   incremental build against a large existing database from a full
   re-hash of all present bytes (measured: hours of verification I/O on
   an 814-GB mirror) into a stat-only pass before the first fetch.
+- The supported Python floor drops to 3.9 (was 3.10): the only 3.10-only
+  API in use was `Path.write_text(..., newline=...)` (test/tool
+  infrastructure plus a few database write paths), now written as the
+  equivalent `open(..., "w", newline=...)`; `requires-python` follows.
+  The reading stack was already 3.9-clean.
 - A fetch pass persists the manifest as parts arrive: mirror products
   fetch tens of thousands of parts in one pass, and the manifest was
   previously written only when the whole product completed — a run that
