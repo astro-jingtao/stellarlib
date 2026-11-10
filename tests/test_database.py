@@ -849,6 +849,100 @@ class TestParallelFetch:
         assert "total: 1 product(s)" in out
 
 
+class TestManifestFlushDuringFetch:
+    """A fetch pass persists arrivals before it ends: a mirror product
+    fetches tens of thousands of parts in one pass, and a failure (or a
+    hard kill) mid-pass must not leave the already-fetched files
+    present-but-unrecorded — that state classifies ok with no integrity
+    evidence and is never re-verified."""
+
+    def _raising_factory(self, mapping, broken):
+        def make():
+            return _RaisingSession(mapping, broken, [])
+
+        return make
+
+    def test_parallel_failure_persists_arrived_parts(self, tmp_path):
+        # the drained batch's manifest write happens before the loud
+        # raise, so the parts that did arrive carry full records
+        good = SOLAR_NAMES[:2]
+        broken_urls = [
+            f"{_MAST}/r500/m+0.00/{name}" for name in SOLAR_NAMES[2:]
+        ]
+        mapping = {SCRIPT_URL: _bulkdl_text(SOLAR_NAMES)}
+        for name in good:
+            mapping[f"{_MAST}/r500/m+0.00/{name}"] = (DATA / name).read_bytes()
+        factory = self._raising_factory(mapping, broken_urls)
+        with pytest.raises(Exception, match="simulated transport failure"):
+            build_database(
+                tmp_path,
+                declarations=[{"family": "bosz"}],
+                select=["bosz/r500/m+0.00"],
+                workers=4,
+                session_factory=factory,
+            )
+        manifest = read_manifest(tmp_path / "bosz" / "r500" / "m+0.00")
+        assert SCRIPT_NAME in manifest["parts"]
+        for name in good:
+            entry = manifest["parts"][name]
+            assert entry["sha256"] == _sha(DATA / name)
+            assert entry["url"].endswith(name)
+
+    def test_sequential_failure_persists_arrived_parts(self, tmp_path):
+        good = SOLAR_NAMES[:2]
+        mapping = {SCRIPT_URL: _bulkdl_text(SOLAR_NAMES[:3])}
+        for name in good:
+            mapping[f"{_MAST}/r500/m+0.00/{name}"] = (DATA / name).read_bytes()
+        session = _RaisingSession(
+            mapping,
+            [f"{_MAST}/r500/m+0.00/{SOLAR_NAMES[2]}"],
+            [],
+        )
+        with pytest.raises(Exception, match="simulated transport failure"):
+            build_database(
+                tmp_path,
+                declarations=[{"family": "bosz"}],
+                select=["bosz/r500/m+0.00"],
+                session=session,
+            )
+        manifest = read_manifest(tmp_path / "bosz" / "r500" / "m+0.00")
+        assert SCRIPT_NAME in manifest["parts"]
+        for name in good:
+            assert manifest["parts"][name]["sha256"] == _sha(DATA / name)
+
+    def test_manifest_flushes_mid_pass(self, tmp_path, monkeypatch):
+        # the chunked flush (every _MANIFEST_FLUSH_PARTS arrivals) fires
+        # DURING the pass, not only at its end: probing the second
+        # spectrum's fetch (with the threshold at 2: script + first
+        # spectrum arrived) must find the first spectrum already
+        # recorded on disk
+        import stellarlib.database.build as build_mod
+
+        monkeypatch.setattr(build_mod, "_MANIFEST_FLUSH_PARTS", 2)
+        directory = tmp_path / "bosz" / "r500" / "m+0.00"
+        probed = []
+
+        class _ProbeSession(FakeSession):
+            def get(self, url, stream=True, timeout=None):
+                if url.endswith(SOLAR_NAMES[1]) and not probed:
+                    probed.append(url)
+                    manifest = read_manifest(directory)
+                    entry = manifest["parts"][SOLAR_NAMES[0]]
+                    assert entry["sha256"] == _sha(DATA / SOLAR_NAMES[0])
+                return super().get(url, stream=stream, timeout=timeout)
+
+        mapping = {SCRIPT_URL: _bulkdl_text(SOLAR_NAMES[:3])}
+        for name in SOLAR_NAMES[:3]:
+            mapping[f"{_MAST}/r500/m+0.00/{name}"] = (DATA / name).read_bytes()
+        build_database(
+            tmp_path,
+            declarations=[{"family": "bosz"}],
+            select=["bosz/r500/m+0.00"],
+            session=_ProbeSession(mapping),
+        )
+        assert probed  # the probe actually fired
+
+
 class TestRegisterLocalProduct:
     def test_copy_mode_self_contained(self, tmp_path):
         files = [DATA / n for n in NODE_NAMES] + [DATA / WAVE_NAME]

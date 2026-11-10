@@ -120,6 +120,12 @@ def _format_of(family: str) -> str:
     return {"bosz": "bosz_resam", "tlusty": "tlusty_vis"}[family]
 
 
+# persist the in-memory manifest after this many arrivals within one
+# fetch pass (see _record): bounds the unrecorded window of a
+# transport-failed pass without a JSON rewrite per part
+_MANIFEST_FLUSH_PARTS = 2000
+
+
 def _build_product(
     design: ProductDesign,
     adapter: FamilyAdapter,
@@ -188,10 +194,22 @@ def _build_product(
 
     def _record(part: PartDesign, entry: dict) -> bool:
         manifest["parts"][part.name] = entry
+        # persist the manifest in chunks as parts arrive: a mirror
+        # product fetches tens of thousands of parts in ONE pass, and a
+        # transport failure mid-pass would otherwise leave every
+        # arrived file present-but-unrecorded (classified ok with no
+        # integrity evidence, never re-verified).  A chunked flush
+        # bounds that loss window at _MANIFEST_FLUSH_PARTS arrivals
+        # without paying a JSON rewrite per part.
+        _record.arrived += 1
+        if _record.arrived % _MANIFEST_FLUSH_PARTS == 0:
+            write_manifest(directory, manifest)
         # an upstream manifest of the directory has arrived (the
         # official bulkdl script; for rorig also the directory index):
         # the design now enumerates every file they list
         return _expands_design(part, entry)
+
+    _record.arrived = 0
 
     def _fetch_one(pending_item, session_of):
         current, _verdict, part = pending_item
@@ -207,7 +225,13 @@ def _build_product(
         nonlocal design
         if workers <= 1:
             for pending_item in pending:
-                part, entry = _fetch_one(pending_item, lambda: session)
+                try:
+                    part, entry = _fetch_one(pending_item, lambda: session)
+                except Exception:
+                    # same contract as the parallel path: persist what
+                    # did arrive, then fail loudly
+                    write_manifest(directory, manifest)
+                    raise
                 if _record(part, entry):
                     design = adapter.expand_design(design, directory)
                     return True
@@ -267,6 +291,10 @@ def _build_product(
             if closer is not None:
                 closer()
         if failure is not None:
+            # the batch has drained: persist what did arrive before the
+            # loud failure — the next run resumes with full integrity
+            # records for every present file
+            write_manifest(directory, manifest)
             raise failure
         if expanded:
             design = adapter.expand_design(design, directory)

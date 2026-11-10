@@ -11,6 +11,15 @@
   incremental build against a large existing database from a full
   re-hash of all present bytes (measured: hours of verification I/O on
   an 814-GB mirror) into a stat-only pass before the first fetch.
+- A fetch pass persists the manifest as parts arrive: mirror products
+  fetch tens of thousands of parts in one pass, and the manifest was
+  previously written only when the whole product completed — a run that
+  died mid-product (transport failure, hard kill) left its arrived
+  files present-but-unrecorded, a state that classifies ok with no
+  integrity evidence and is never re-verified. The manifest now
+  flushes every 2,000 arrivals and once more after a failed batch
+  drains (and on the sequential path's failure), so the next run
+  resumes with full integrity records for every present file.
 
 - `build_database` gains `workers=`: bounded parallelism for one
   product's fetch pass (default 1, strictly sequential). A
