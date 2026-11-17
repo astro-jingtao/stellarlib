@@ -171,6 +171,22 @@ invalidation — after migrating a database to another machine, delete
 `tar` transfers content unverified, while a fresh `rsync` verifies by
 checksum).
 
+The **Verifier** (`verify_database`) is the explicit full-integrity
+pass: it re-judges every designed product in place — recorded parts
+against both recorded quantities, served from the signature cache —
+and backfills evidence for present parts with no recorded sha256 (the
+state a transport-failed or killed fetch pass leaves when its manifest
+write was lost): the file is hashed where it lies and recorded with
+`evidence: sha256_verified_in_place`, keeping any history a
+half-written entry already held. It never fetches: missing parts are
+reported, and nonconforming parts are left for human decision.
+Backfills persist through the same chunked manifest flushes as fetch
+arrivals (the cache piggybacks on those flushes too), so a pass killed
+midway loses at most one chunk of evidence, and a re-run reads only
+what it never reached — everything else is served from the cache.
+`workers=` bounds the hashing parallelism — a speed axis only, per-part
+semantics identical.
+
 Each family mirrors its upstream exactly at the granularity the source
 publishes (the verified facts and scales live in docs/data-sources.md):
 

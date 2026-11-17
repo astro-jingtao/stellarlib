@@ -25,7 +25,13 @@ from stellarlib.database.signature_cache import SignatureCache
 from stellarlib.models.bosz.design import BOSZ_ADAPTER
 from stellarlib.models.tlusty.design import TLUSTY_ADAPTER
 
-__all__ = ["scan_database", "DatabaseReport", "ProductReport", "ADAPTERS"]
+__all__ = [
+    "scan_database",
+    "enumerate_designs",
+    "DatabaseReport",
+    "ProductReport",
+    "ADAPTERS",
+]
 
 ADAPTERS: dict[str, FamilyAdapter] = {
     "bosz": BOSZ_ADAPTER,
@@ -168,6 +174,30 @@ def _manifest_of(directory: Path) -> dict | None:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def enumerate_designs(
+    database: str | Path,
+    declarations: list[dict] | None = None,
+) -> dict[str, tuple[ProductDesign, FamilyAdapter]]:
+    """Every designed product of a database: its blueprint's entries (plus
+    any ``declarations`` passed for this call only), each expanded through
+    its family adapter, keyed by directory name. Duplicate designed
+    products are an error — one directory holds one product."""
+    root = Path(database)
+    designs: dict[str, tuple[ProductDesign, FamilyAdapter]] = {}
+    for declaration in [*_read_declarations(root), *(declarations or [])]:
+        family = declaration.get("family")
+        if family is None:
+            raise ValueError(f"blueprint declaration without family: {declaration!r}")
+        adapter = _adapter_for(family)
+        for design in adapter.designs(declaration):
+            if design.directory_name in designs:
+                raise ValueError(
+                    f"duplicate designed product {design.directory_name}"
+                )
+            designs[design.directory_name] = (design, adapter)
+    return designs
+
+
 def scan_database(
     database: str | Path,
     declarations: list[dict] | None = None,
@@ -192,18 +222,7 @@ def scan_database(
     if own_cache:
         signature_cache = SignatureCache(root)
 
-    designs: dict[str, tuple[ProductDesign, FamilyAdapter]] = {}
-    for declaration in [*_read_declarations(root), *(declarations or [])]:
-        family = declaration.get("family")
-        if family is None:
-            raise ValueError(f"blueprint declaration without family: {declaration!r}")
-        adapter = _adapter_for(family)
-        for design in adapter.designs(declaration):
-            if design.directory_name in designs:
-                raise ValueError(
-                    f"duplicate designed product {design.directory_name}"
-                )
-            designs[design.directory_name] = (design, adapter)
+    designs = enumerate_designs(root, declarations)
 
     reports: list[ProductReport] = []
     registered: set[str] = set()

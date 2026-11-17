@@ -1,4 +1,5 @@
-"""Tests for the database package: blueprint, manifest, scan, build, register.
+"""Tests for the database package: blueprint, manifest, scan, build, verify,
+register.
 
 The build tests run offline against a fake HTTP session: the fake upstream
 serves one real-format bulkdl script (listing the fixture spectra of one
@@ -17,7 +18,11 @@ from pathlib import Path
 
 import pytest
 
-from stellarlib.database.build import build_database, register_local_product
+from stellarlib.database.build import (
+    build_database,
+    register_local_product,
+    verify_database,
+)
 from stellarlib.database.core import open_database
 from stellarlib.database.design import (
     PartDesign,
@@ -1216,6 +1221,200 @@ class TestManifestFlushDuringFetch:
             session=_ProbeSession(mapping),
         )
         assert probed  # the probe actually fired
+
+
+class TestVerifyDatabase:
+    """verify_database: re-check recorded evidence in place, backfill
+    evidence for present-but-unrecorded parts (the lost-write state a
+    transport-failed fetch pass leaves), and never fetch."""
+
+    def _mirror_built(self, tmp_path) -> Path:
+        build_database(
+            tmp_path,
+            declarations=[{"family": "bosz"}],
+            session=_mirror_session(),
+            log=lambda *_: None,
+        )
+        return tmp_path / "bosz" / "r500" / "m+0.00"
+
+    @staticmethod
+    def _strip_records(directory: Path, names) -> None:
+        manifest = read_manifest(directory)
+        for name in names:
+            del manifest["parts"][name]
+        write_manifest(directory, manifest)
+
+    def test_backfills_lost_manifest_records(self, tmp_path):
+        directory = self._mirror_built(tmp_path)
+        # one entry lost entirely; one downgraded to a bare failed-fetch
+        # record (the shapes a transport-failed pass can leave behind)
+        lost, downgraded = SOLAR_NAMES[0], SOLAR_NAMES[1]
+        manifest = read_manifest(directory)
+        del manifest["parts"][lost]
+        manifest["parts"][downgraded] = {
+            "file": downgraded,
+            "http_status": 404,
+            "error": "not found",
+            "url": f"{_MAST}/r500/m+0.00/{downgraded}",
+            "attempted_at": "2026-01-01T00:00:00Z",
+        }
+        write_manifest(directory, manifest)
+
+        report = verify_database(
+            tmp_path, select=["bosz/r500/m+0.00"], log=lambda *_: None
+        )
+
+        (v,) = report.products
+        assert v.state == "complete"
+        assert v.backfilled == 2
+        assert v.recorded_ok == 3  # script + the two untouched spectra
+        assert v.missing == 0 and v.nonconforming == ()
+        restored = read_manifest(directory)["parts"]
+        entry = restored[lost]
+        assert entry["sha256"] == _sha(DATA / lost)
+        assert entry["size_bytes"] == (DATA / lost).stat().st_size
+        assert entry["evidence"] == "sha256_verified_in_place"
+        assert entry["url"] == f"{_MAST}/r500/m+0.00/{lost}"
+        kept = restored[downgraded]
+        assert kept["http_status"] == 404  # the recorded history survives
+        assert kept["sha256"] == _sha(DATA / downgraded)
+        # the backfill is durable: a scan now sees full evidence
+        scan = scan_database(tmp_path)
+        (product,) = (p for p in scan.products if p.label_path == "bosz/r500/m+0.00")
+        assert product.state == "complete"
+
+    def test_parallel_workers_match_sequential_backfill(self, tmp_path):
+        directory = self._mirror_built(tmp_path)
+        self._strip_records(directory, SOLAR_NAMES)
+
+        report = verify_database(
+            tmp_path, select=["bosz/r500/m+0.00"], workers=4,
+            log=lambda *_: None,
+        )
+
+        (v,) = report.products
+        assert v.backfilled == 4
+        assert v.state == "complete"
+        manifest = read_manifest(directory)
+        for name in SOLAR_NAMES:
+            assert manifest["parts"][name]["sha256"] == _sha(DATA / name)
+
+    def test_reports_nonconforming_and_missing_without_touching_them(
+        self, tmp_path
+    ):
+        directory = self._mirror_built(tmp_path)
+        # same-size corruption: the size check passes, sha256 catches it
+        tampered = directory / SOLAR_NAMES[0]
+        raw = tampered.read_bytes()
+        tampered.write_bytes(raw[:-1] + bytes([raw[-1] ^ 0xFF]))
+        # size corruption: the verdict on its own, no read needed
+        short = directory / SOLAR_NAMES[1]
+        short.write_bytes(b"short")
+        # a deleted part is missing — reported, never fetched
+        (directory / SOLAR_NAMES[2]).unlink()
+
+        report = verify_database(
+            tmp_path, select=["bosz/r500/m+0.00"], log=lambda *_: None
+        )
+
+        (v,) = report.products
+        assert v.state == "incomplete"
+        assert v.recorded_ok == 2  # script + the untouched spectrum
+        assert v.missing == 1
+        assert len(v.nonconforming) == 2
+        reasons = dict(v.nonconforming)
+        assert "size 5 !=" in reasons[SOLAR_NAMES[1]]
+        assert "sha256" in reasons[SOLAR_NAMES[0]]
+        # nonconforming parts keep their recorded entries unchanged
+        manifest = read_manifest(directory)
+        assert "evidence" not in manifest["parts"][SOLAR_NAMES[0]]
+
+    def test_absent_products_and_select_discipline(self, tmp_path):
+        # a selected build leaves the other products without directories
+        build_database(
+            tmp_path,
+            declarations=[{"family": "bosz"}],
+            session=_mirror_session(),
+            select=["bosz/r500/m+0.00"],
+            log=lambda *_: None,
+        )
+        report = verify_database(tmp_path, log=lambda *_: None)
+        states = {v.label_path: v.state for v in report.products}
+        assert len(states) == 113
+        assert states["bosz/r500/m+0.00"] == "complete"
+        assert states["bosz/r500/m+0.25"] == "absent"
+        assert states["bosz/wavelength_grids/all"] == "absent"
+        with pytest.raises(ValueError, match="match no declared product"):
+            verify_database(tmp_path, select=["bosz/nope/*"], log=lambda *_: None)
+        with pytest.raises(ValueError, match="select must not be an empty list"):
+            verify_database(tmp_path, select=[], log=lambda *_: None)
+
+    def test_learns_cache_and_second_pass_reads_nothing(
+        self, tmp_path, monkeypatch
+    ):
+        self._mirror_built(tmp_path)
+        # drop the builder's cache: the first verify reads every part
+        (tmp_path / "signature_cache.json").unlink()
+
+        import stellarlib.database.build as build_mod
+
+        calls: list[Path] = []
+        real = build_mod.sha256_file
+
+        def counting(path):
+            calls.append(path)
+            return real(path)
+
+        monkeypatch.setattr(build_mod, "sha256_file", counting)
+        first = verify_database(
+            tmp_path, select=["bosz/r500/m+0.00"], log=lambda *_: None
+        )
+        assert len(calls) == 5  # script + 4 spectra, each read exactly once
+        calls.clear()
+        second = verify_database(
+            tmp_path, select=["bosz/r500/m+0.00"], log=lambda *_: None
+        )
+        assert calls == []  # every answer served by the learned cache
+        assert first.products == second.products
+
+    def test_manifest_flushes_mid_verify(self, tmp_path, monkeypatch):
+        import stellarlib.database.build as build_mod
+
+        directory = self._mirror_built(tmp_path)
+        self._strip_records(directory, SOLAR_NAMES)
+        monkeypatch.setattr(build_mod, "_MANIFEST_FLUSH_PARTS", 2)
+        writes = []
+        real_write = build_mod.write_manifest
+
+        def counting_write(dir_path, manifest):
+            writes.append(dir_path)
+            return real_write(dir_path, manifest)
+
+        monkeypatch.setattr(build_mod, "write_manifest", counting_write)
+
+        verify_database(
+            tmp_path, select=["bosz/r500/m+0.00"], log=lambda *_: None
+        )
+
+        # 4 backfills at a threshold of 2: two mid-pass flushes plus the
+        # closing write — a kill mid-verify loses at most one chunk
+        assert writes == [directory, directory, directory]
+
+    def test_requires_a_blueprint(self, tmp_path):
+        with pytest.raises(ValueError, match="no blueprint declared"):
+            verify_database(tmp_path, log=lambda *_: None)
+
+    def test_product_directory_without_manifest_fails_loudly(self, tmp_path):
+        build_database(
+            tmp_path,
+            declarations=[{"family": "bosz"}],
+            session=_mirror_session(),
+            select=["bosz/r500/m+0.00"],
+            log=lambda *_: None,
+        )
+        (tmp_path / "bosz" / "r500" / "m+0.25").mkdir(parents=True)
+        with pytest.raises(FileNotFoundError):
+            verify_database(tmp_path, log=lambda *_: None)
 
 
 class TestRegisterLocalProduct:

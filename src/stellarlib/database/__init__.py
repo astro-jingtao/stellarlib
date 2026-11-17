@@ -26,5 +26,7 @@ family it names is held in full, as whole upstream units, never a
 subset; the **Scanner** classifies every designed part (ok / missing /
 nonconforming) into a two-state product report (complete / incomplete);
 the **Builder** fetches missing parts through the family adapter and
-never touches nonconforming ones.
+never touches nonconforming ones; the **Verifier** (``verify_database``)
+re-checks recorded evidence in place and backfills records for
+present-but-unrecorded parts, never fetching.
 """

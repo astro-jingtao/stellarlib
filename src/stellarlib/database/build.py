@@ -1,4 +1,4 @@
-"""build_database and register_local_product: the write paths.
+"""build_database, verify_database, and register_local_product: the write paths.
 
 The blueprint (design.json) is a local record of the complete upstream
 library: every declared family expands to its whole official packages —
@@ -15,6 +15,10 @@ it. ``dry_run=True`` reports the plan without touching the disk.
 A pass may fetch its parts through bounded parallelism
 (``build_database(workers=N)``) — a speed axis only: per-part semantics,
 the two-state scan, and resume behavior are identical.
+The verifier re-reads what the builder left: every recorded part is
+checked against both recorded quantities, and a present part whose
+manifest write was lost (a transport-failed pass) gets its evidence
+backfilled — hashed in place and recorded. It never fetches.
 Registration admits locally held files as products — copied in by
 default (self-contained, portable), or referenced in place for sets that
 already live where their project wants them.
@@ -22,6 +26,7 @@ already live where their project wants them.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import shutil
 import threading
@@ -29,7 +34,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from fnmatch import fnmatch
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, NamedTuple
 
 import requests
 
@@ -47,7 +52,7 @@ from stellarlib.database.manifest import (
     read_manifest,
     write_manifest,
 )
-from stellarlib.database.scan import scan_database
+from stellarlib.database.scan import enumerate_designs, scan_database
 from stellarlib.database.signature_cache import SignatureCache
 from stellarlib.exceptions import SourceUnavailableError
 from stellarlib.integrity import sha256_file
@@ -55,7 +60,14 @@ from stellarlib.models.bosz.reader import recognize_bosz, recognize_wave_grid
 from stellarlib.models.tlusty.reader import recognize_tlusty
 from stellarlib.registry import references
 
-__all__ = ["build_database", "register_local_product", "DESIGN_SCHEMA"]
+__all__ = [
+    "build_database",
+    "verify_database",
+    "VerifyReport",
+    "ProductVerification",
+    "register_local_product",
+    "DESIGN_SCHEMA",
+]
 
 DESIGN_SCHEMA = "stellarlib-design/2"
 
@@ -323,24 +335,22 @@ def _build_product(
         cache.save_if_dirty()
 
 
-def _apply_select(products, patterns: list[str] | None):
-    """Filter one run's products by glob patterns over their paths.
+def _apply_select(names, patterns: list[str] | None):
+    """Filter product names by glob patterns over their paths.
 
     A pattern that matches no declared product is an error — a typo'd
     selector must never masquerade as a completed round.
     """
+    names = list(names)
     if patterns is None:
-        return products
-    names = [p.label_path for p in products]
+        return tuple(names)
     unmatched = [p for p in patterns if not any(fnmatch(n, p) for n in names)]
     if unmatched:
         raise ValueError(
             f"select pattern(s) match no declared product: {unmatched}; "
             f"declared: {names}"
         )
-    return tuple(
-        p for p in products if any(fnmatch(p.label_path, pat) for pat in patterns)
-    )
+    return tuple(n for n in names if any(fnmatch(n, pat) for pat in patterns))
 
 
 def build_database(
@@ -424,7 +434,9 @@ def build_database(
             declarations=list(declarations or []),
             signature_cache=SignatureCache(root, writable=False),
         )
-        shown = _apply_select(report.products, patterns)
+        chosen = _apply_select([p.label_path for p in report.products], patterns)
+        by_name = {p.label_path: p for p in report.products}
+        shown = [by_name[name] for name in chosen]
         for product in shown:
             missing = [
                 v for v in product.verdicts if v.kind == VerdictKind.MISSING
@@ -472,7 +484,12 @@ def build_database(
         session = _new_fetch_session()
         own_session = True
     try:
-        for product in _apply_select(report.products, patterns):
+        chosen = _apply_select(
+            [p.label_path for p in report.products], patterns
+        )
+        by_name = {p.label_path: p for p in report.products}
+        for name in chosen:
+            product = by_name[name]
             adapter = ADAPTERS[product.design.family]
             _build_product(
                 product.design, adapter, root, session, log,
@@ -486,6 +503,268 @@ def build_database(
     finally:
         if own_session:
             session.close()
+
+
+@dataclasses.dataclass(frozen=True)
+class ProductVerification:
+    """One product's outcome of a verify pass (see :func:`verify_database`)."""
+
+    label_path: str
+    directory: Path | None  # None: the product was never fetched
+    recorded_ok: int  # present parts that passed their recorded evidence
+    backfilled: int  # present parts whose evidence was added this run
+    missing: int
+    nonconforming: tuple[tuple[str, str], ...]  # (part name, reason)
+
+    @property
+    def state(self) -> str:
+        if self.directory is None:
+            return "absent"
+        if self.missing == 0 and not self.nonconforming:
+            return "complete"
+        return "incomplete"
+
+
+@dataclasses.dataclass(frozen=True)
+class VerifyReport:
+    """The outcome of one :func:`verify_database` pass."""
+
+    root: Path
+    products: tuple[ProductVerification, ...]
+
+    def to_dict(self) -> dict:
+        return {
+            "root": str(self.root),
+            "products": [
+                {
+                    "product": v.label_path,
+                    "state": v.state,
+                    "recorded_ok": v.recorded_ok,
+                    "backfilled": v.backfilled,
+                    "missing": v.missing,
+                    "nonconforming": [
+                        {"part": name, "reason": reason}
+                        for name, reason in v.nonconforming
+                    ],
+                }
+                for v in self.products
+            ],
+        }
+
+
+class _PartOutcome(NamedTuple):
+    part: PartDesign
+    kind: str  # "ok" | "missing" | "backfill" | "nonconforming"
+    reason: str | None
+    size: int | None
+    digest: str | None  # the file's sha256 answer when it was needed
+    computed: bool  # the digest was hashed this call, not served by peek
+
+
+def _verify_part(
+    part: PartDesign,
+    directory: Path,
+    recorded: dict | None,
+    cache: SignatureCache,
+) -> _PartOutcome:
+    """Judge one part for the verifier — the same verdicts as
+    ``classify_part_generic``, plus the backfill case (present on disk,
+    no recorded sha256), with the digest returned so the caller records
+    it. Never touches the manifest; safe to run on worker threads (the
+    cache is only peeked, never mutated)."""
+    path = directory / part.name
+    try:
+        st = path.stat()
+    except FileNotFoundError:
+        return _PartOutcome(part, "missing", None, None, None, False)
+    expected = (recorded or {}).get("sha256")
+    size_expected = (recorded or {}).get("size_bytes")
+    if (
+        expected is not None
+        and size_expected is not None
+        and st.st_size != size_expected
+    ):
+        # identical bytes cannot have different sizes: the verdict on its
+        # own, nothing a full read could clear
+        return _PartOutcome(
+            part,
+            "nonconforming",
+            f"integrity: size {st.st_size} != recorded {size_expected} bytes",
+            st.st_size,
+            None,
+            False,
+        )
+    digest = cache.peek(str(path), st.st_size, st.st_mtime_ns)
+    computed = digest is None
+    if computed:
+        digest = sha256_file(path)
+    if expected is None:
+        return _PartOutcome(part, "backfill", None, st.st_size, digest, computed)
+    if digest.lower() != str(expected).lower():
+        return _PartOutcome(
+            part,
+            "nonconforming",
+            f"integrity: sha256 {digest} != recorded {expected}",
+            st.st_size,
+            digest,
+            computed,
+        )
+    return _PartOutcome(part, "ok", None, st.st_size, digest, computed)
+
+
+def _verify_product(
+    design: ProductDesign,
+    adapter: FamilyAdapter,
+    root: Path,
+    log,
+    cache: SignatureCache,
+    workers: int = 1,
+) -> ProductVerification:
+    """Verify one product in place: judge every designed part, backfill
+    evidence for present-but-unrecorded ones, persist the manifest in
+    chunks as evidence arrives (the cache piggybacks on the same
+    flushes), and never fetch."""
+    directory = root / design.family / design.collection / design.label
+    if not directory.exists():
+        return ProductVerification(design.directory_name, None, 0, 0, 0, ())
+    manifest = read_manifest(directory)
+    design = adapter.expand_design(design, directory)
+    parts = manifest["parts"]
+
+    def judge(part: PartDesign) -> _PartOutcome:
+        return _verify_part(part, directory, parts.get(part.name), cache)
+
+    if workers <= 1:
+        outcomes = [judge(part) for part in design.parts]
+    else:
+        # a hashing failure aborts before any manifest mutation: outcomes
+        # are collected whole first, so a failed product leaves no
+        # partial state (the cache holds nothing of it either — workers
+        # only peek)
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            outcomes = list(pool.map(judge, design.parts))
+
+    recorded_ok = missing = backfilled = 0
+    nonconforming: list[tuple[str, str]] = []
+    arrivals = 0
+    for outcome in outcomes:
+        if outcome.computed and outcome.digest is not None:
+            cache.remember(directory / outcome.part.name, outcome.digest)
+        if outcome.kind == "ok":
+            recorded_ok += 1
+        elif outcome.kind == "missing":
+            missing += 1
+        elif outcome.kind == "backfill":
+            # present on disk, no recorded sha256: the file arrived in an
+            # earlier fetch round whose manifest write was lost — hash in
+            # place, keep whatever history the half-written entry holds
+            entry = dict(parts.get(outcome.part.name) or {})
+            entry.update(
+                file=outcome.part.name,
+                sha256=outcome.digest,
+                size_bytes=outcome.size,
+                verified_at=_now_iso(),
+                url=outcome.part.url,
+                evidence="sha256_verified_in_place",
+            )
+            parts[outcome.part.name] = entry
+            backfilled += 1
+            arrivals += 1
+            if arrivals % _MANIFEST_FLUSH_PARTS == 0:
+                write_manifest(directory, manifest)
+                cache.save_if_dirty()
+        else:
+            nonconforming.append((outcome.part.name, outcome.reason or ""))
+    if backfilled:
+        write_manifest(directory, manifest)
+    cache.save_if_dirty()
+    return ProductVerification(
+        design.directory_name,
+        directory,
+        recorded_ok,
+        backfilled,
+        missing,
+        tuple(nonconforming),
+    )
+
+
+def verify_database(
+    database: str | Path,
+    select: Iterable[str] | None = None,
+    workers: int = 1,
+    log=print,
+) -> VerifyReport:
+    """One full-integrity pass over a database, against its blueprint.
+
+    Every product the blueprint declares is judged in place. Recorded
+    parts are verified against both recorded quantities (size, then
+    sha256 — served from the database's signature cache, so unchanged
+    files cost one stat); present parts with no recorded sha256 — files
+    whose fetch round completed but whose manifest write was lost — are
+    hashed in place and their evidence recorded (``evidence:
+    sha256_verified_in_place``), which is the backfill that turns
+    present-ok-no-evidence into present-with-proof. Missing parts are
+    reported, never fetched; nonconforming parts are reported for human
+    decision and never touched. Products never fetched report as
+    ``absent``. The signature cache is learned from and saved along the
+    way (piggybacking the manifest's chunked flushes), so a re-run after
+    an aborted pass re-reads only what it never reached.
+
+    ``select`` restricts the pass to matching product paths (glob
+    patterns, as in :func:`build_database`); the blueprint is untouched.
+    ``workers`` bounds the hashing parallelism (default 1 = strictly
+    sequential) — a speed axis only: per-part semantics are identical,
+    worker threads only stat, peek, and hash, and a hashing error fails
+    the run loudly having written nothing for the failing product.
+
+    The pass covers blueprint products; registered local products
+    (``register_local_product``) carry complete evidence by
+    construction and are not its subject.
+    """
+    root = Path(database)
+    if workers < 1:
+        raise ValueError(f"workers must be >= 1; got {workers}")
+    if not root.is_dir():
+        raise NotADirectoryError(root)
+    declarations = _merge_designs(root, None)
+    if not declarations:
+        raise ValueError(
+            "no blueprint declared: verify_database judges parts against "
+            "the database's design.json — declare it once with "
+            "build_database(declarations=[{'family': ...}], ...)"
+        )
+    patterns = None if select is None else [str(p) for p in select]
+    if patterns is not None and not patterns:
+        raise ValueError("select must not be an empty list")
+
+    designs = enumerate_designs(root)
+    cache = SignatureCache(root)
+    verifications: list[ProductVerification] = []
+    for name in _apply_select(list(designs), patterns):
+        design, adapter = designs[name]
+        log(f"verify {name} ({len(design.parts)} designed part(s))")
+        verification = _verify_product(
+            design, adapter, root, log=log, cache=cache, workers=workers
+        )
+        verifications.append(verification)
+        if verification.directory is None:
+            log(f"{name}: absent (never fetched)")
+        else:
+            log(
+                f"{name}: {verification.state} "
+                f"({verification.recorded_ok} verified, "
+                f"{verification.backfilled} backfilled, "
+                f"{verification.missing} missing, "
+                f"{len(verification.nonconforming)} nonconforming)"
+            )
+    total_backfilled = sum(v.backfilled for v in verifications)
+    total_nonconforming = sum(len(v.nonconforming) for v in verifications)
+    log(
+        f"total: {len(verifications)} product(s) judged; "
+        f"{total_backfilled} part(s) backfilled, {total_nonconforming} "
+        "nonconforming (human decision, never touched)"
+    )
+    return VerifyReport(root=root, products=tuple(verifications))
 
 
 def register_local_product(

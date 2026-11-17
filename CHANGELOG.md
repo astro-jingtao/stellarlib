@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- `verify_database` runs one full-integrity pass over a database
+  against its blueprint: recorded parts are re-checked against both
+  recorded quantities, and present parts with no recorded sha256 —
+  files whose fetch round arrived but whose manifest write was lost —
+  are hashed in place and recorded with `evidence:
+  sha256_verified_in_place`, keeping any history a half-written entry
+  already held. It never fetches: missing parts are reported,
+  nonconforming parts are left for human decision, and the pass learns
+  the signature cache as it reads (piggybacking the same chunked
+  manifest flushes as fetch arrivals), so a re-run after an abort
+  reads only what it never reached. `workers=` bounds the hashing
+  parallelism — a speed axis only, per-part semantics identical.
 - `BoszSpectra.construct(database=...)` now honors an explicit
   `wave_path=` pin: the database branch previously accepted the
   parameter and silently dropped it (only `am`/`cm`/`vmicro` rode

@@ -28,7 +28,11 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from file_quick_signature.key import file_quick_signature
+from file_quick_signature.key import (
+    apply_remappers,
+    build_key,
+    file_quick_signature,
+)
 from file_quick_signature.remapper import AbsoluteToRelativeRemapper
 from file_quick_signature.store import SignatureStore
 
@@ -47,8 +51,10 @@ class SignatureCache:
     way ``file_quick_signature`` canonicalizes files, so every alias of
     the database produces the same keys). ``writable=False`` serves
     recorded answers but never records or saves — the read-only mode of
-    dry-run planning. Instances are used from the thread that owns the
-    scan or build (worker threads never touch the cache).
+    dry-run planning. Instances are mutated only from the thread that
+    owns the scan, build, or verify (worker threads never write; the
+    hashing workers of a parallel verify consult the store read-only
+    through :meth:`peek`).
     """
 
     def __init__(self, root: str | Path, writable: bool = True) -> None:
@@ -76,6 +82,22 @@ class SignatureCache:
             self._store.data[key] = digest
             self._dirty = True
         return digest
+
+    def peek(self, path: str | Path, size: int, mtime_ns: int) -> str | None:
+        """The recorded sha256 for exactly this file state, or None.
+
+        Unlike :meth:`sha256` this never reads or hashes the file: the
+        caller supplies the stat quantities it already holds, and the
+        key is built from them byte-identically to the store's own
+        pipeline. Read-only, so a hashing worker thread may call it
+        while the owning thread alone records and saves.
+        """
+        key = build_key(
+            apply_remappers(os.path.realpath(str(path)), self._remapper),
+            size,
+            mtime_ns,
+        )
+        return self._store.data.get(key)
 
     def remember(self, path: str | Path, digest: str) -> None:
         """Record a sha256 already computed elsewhere (the streaming

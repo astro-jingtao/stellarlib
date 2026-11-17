@@ -8,7 +8,13 @@ on (Teff, log g, [M/H], ...) parameter grids.
 __version__ = "0.1.2"
 
 from stellarlib.core import FieldSpec, ModelIdentity, ParameterRole, ParameterSpec
-from stellarlib.database.build import build_database, register_local_product
+from stellarlib.database.build import (
+    ProductVerification,
+    VerifyReport,
+    build_database,
+    register_local_product,
+    verify_database,
+)
 from stellarlib.database.core import Database, open_database
 from stellarlib.exceptions import StellarLibError
 from stellarlib.facade import BoszSpectra, TlustySpectra, UnifiedSpectra, construct
@@ -59,6 +65,9 @@ __all__ = [
     "BoszSpectra",
     "TlustySpectra",
     "build_database",
+    "verify_database",
+    "VerifyReport",
+    "ProductVerification",
     "open_database",
     "Database",
     "register_local_product",
