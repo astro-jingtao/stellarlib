@@ -1392,3 +1392,31 @@ class TestDatabaseOpen:
         assert len(bosz) == len(SOLAR_NAMES)
         tlusty = TlustySpectra.construct(database=tmp_path, label="ostar_g")
         assert len(tlusty) == len(files)
+
+    def test_construct_database_mirror_wave_sidecar(self, tmp_path):
+        # the mirror layout: the wavelength sidecar lives in its own
+        # product, never next to the mirror's spectra. construct's
+        # database branch discovers it across products, and an explicit
+        # wave_path pin reaches the reader instead of being dropped
+        # (a bogus pin is a loud error, never silently replaced by
+        # discovery)
+        from stellarlib.exceptions import WavelengthGridError
+        from stellarlib.facade import BoszSpectra
+
+        build_database(
+            tmp_path,
+            declarations=[{"family": "bosz"}],
+            select=["bosz/r500/m+0.00", "bosz/wavelength_grids/*"],
+            session=_mirror_session(),
+        )
+        spectra = BoszSpectra.construct(
+            database=tmp_path, collection="r500", label="m+0.00"
+        )
+        assert len(spectra) == len(SOLAR_NAMES)
+        with pytest.raises(WavelengthGridError, match="not-there"):
+            BoszSpectra.construct(
+                database=tmp_path,
+                collection="r500",
+                label="m+0.00",
+                wave_path=tmp_path / "not-there.txt",
+            )

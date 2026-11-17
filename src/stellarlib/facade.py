@@ -427,18 +427,26 @@ class BoszSpectra(UnifiedSpectra):
         ``database``/``label`` load a product from a database built with
         ``stellarlib.build_database`` — a mirror product needs its
         ``collection`` (e.g. ``"r500"``) when the metallicity label alone
-        is ambiguous.
+        is ambiguous. ``wave_path`` pins the wavelength sidecar on
+        either branch; left unset on the database branch, the sidecar is
+        discovered across the database's products (mirror products hold
+        no wave file of their own — the sidecars mirror as their own
+        product).
         """
         if database is not None:
+            selection = dict(am=am, cm=cm, vmicro=vmicro)
+            # only a stated pin rides along: a None would occupy the
+            # option and turn the database's cross-product sidecar
+            # discovery off (grid treats a present key as a pin)
+            if wave_path is not None:
+                selection["wave_path"] = wave_path
             return cls(
                 _database_grid(
                     "bosz/2024",
                     database,
                     label,
                     collection=collection,
-                    am=am,
-                    cm=cm,
-                    vmicro=vmicro,
+                    **selection,
                 ).sets
             )
         if paths is None:

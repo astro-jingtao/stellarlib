@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- `BoszSpectra.construct(database=...)` now honors an explicit
+  `wave_path=` pin: the database branch previously accepted the
+  parameter and silently dropped it (only `am`/`cm`/`vmicro` rode
+  along), so a stated sidecar never reached the reader. Left unset,
+  nothing changes — the sidecar is discovered across the database's
+  products, which covers mirror products (the sidecar mirrors as its
+  own product, never next to the spectra).
 - Part classification verifies a present part against both recorded
   quantities: a size mismatch is nonconforming on its own (identical
   bytes cannot have different sizes), and a matching size still pays
