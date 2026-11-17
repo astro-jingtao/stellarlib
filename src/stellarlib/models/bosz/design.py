@@ -43,6 +43,7 @@ from stellarlib.database.design import (
     VerdictKind,
     classify_part_generic,
 )
+from stellarlib.database.signature_cache import SignatureCache
 from stellarlib.exceptions import SourceUnavailableError
 
 __all__ = [
@@ -341,9 +342,9 @@ class BoszAdapter:
 
     def classify_part(
         self, design: ProductDesign, part: PartDesign, directory: Path,
-        manifest: Mapping,
+        manifest: Mapping, cache: SignatureCache | None = None,
     ) -> PartVerdict:
-        return classify_part_generic(design, part, directory, manifest)
+        return classify_part_generic(design, part, directory, manifest, cache)
 
     def fetch_part(
         self,

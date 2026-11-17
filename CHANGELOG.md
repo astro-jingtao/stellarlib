@@ -2,15 +2,22 @@
 
 ## Unreleased
 
-- Part classification gained a size fast path: a present part whose
-  recorded `size_bytes` (written at fetch time on every part) matches
-  the file's size is classified ok without reading a byte. Any
-  disagreement — or a manifest record without a size — falls through
-  to the sha256 authority as before (a stale size with intact content
-  still clears; a tampered file is still nonconforming). This turns an
-  incremental build against a large existing database from a full
-  re-hash of all present bytes (measured: hours of verification I/O on
-  an 814-GB mirror) into a stat-only pass before the first fetch.
+- Part classification verifies a present part against both recorded
+  quantities: a size mismatch is nonconforming on its own (identical
+  bytes cannot have different sizes), and a matching size still pays
+  the sha256 comparison — size equality alone never clears a part. The
+  sha256 answer is served from a new database-level signature cache
+  (`signature_cache.json`, built on the `file_quick_signature` key
+  grammar with paths relative to the database root): an unchanged file
+  costs one `stat`, so an incremental build against a large existing
+  database pays a full read at most once per file, not once per run
+  (the earlier size-only fast path, which skipped the hash entirely on
+  size equality, is superseded). Fetch-time and registration hashes
+  feed the cache; deleting the file is always safe and forces one full
+  re-verify — the recommended action after migrating a database to
+  another machine, since mtime-preserving copies transfer content
+  unverified. A first scan after this change re-hashes every present
+  part once to populate the cache.
 - The supported Python floor drops to 3.9 (was 3.10): the only 3.10-only
   API in use was `Path.write_text(..., newline=...)` (test/tool
   infrastructure plus a few database write paths), now written as the

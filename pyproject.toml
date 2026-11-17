@@ -23,6 +23,7 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -34,6 +35,7 @@ dependencies = [
     "scipy>=1.10",
     "requests>=2.28",
     "certifi",
+    "file_quick_signature @ git+https://github.com/astro-jingtao/file_quick_signature",
 ]
 
 [project.optional-dependencies]

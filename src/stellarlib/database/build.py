@@ -48,6 +48,7 @@ from stellarlib.database.manifest import (
     write_manifest,
 )
 from stellarlib.database.scan import scan_database
+from stellarlib.database.signature_cache import SignatureCache
 from stellarlib.exceptions import SourceUnavailableError
 from stellarlib.integrity import sha256_file
 from stellarlib.models.bosz.reader import recognize_bosz, recognize_wave_grid
@@ -133,13 +134,15 @@ def _build_product(
     log,
     workers: int = 1,
     session_factory=None,
+    cache: SignatureCache | None = None,
 ) -> None:
     """Complete one product: expand the design, fetch missing parts, and
     re-expand once the upstream bulk manifest part has arrived.
 
     ``workers`` bounds the parallelism of one fetch pass (1 = strictly
     sequential, the default); per-part semantics are identical either
-    way (see :func:`build_database`)."""
+    way (see :func:`build_database`). ``cache`` is the database's
+    signature cache (see :func:`build_database` for what it does)."""
     directory = root / design.family / design.collection / design.label
     directory.mkdir(parents=True, exist_ok=True)
     manifest_path = directory / "MANIFEST.json"
@@ -166,7 +169,7 @@ def _build_product(
 
     def _missing() -> list[tuple[ProductDesign, PartVerdict, object]]:
         verdicts = [
-            adapter.classify_part(design, part, directory, manifest)
+            adapter.classify_part(design, part, directory, manifest, cache)
             for part in design.parts
         ]
         bad = [v for v in verdicts if v.kind == VerdictKind.NONCONFORMING]
@@ -193,6 +196,11 @@ def _build_product(
 
     def _record(part: PartDesign, entry: dict) -> bool:
         manifest["parts"][part.name] = entry
+        # the streaming hash of a fetch is the file's sha256: recording
+        # it against the file's quick signature saves the first
+        # post-fetch classification a full read
+        if cache is not None and "sha256" in entry:
+            cache.remember(directory / part.name, entry["sha256"])
         # persist the manifest in chunks as parts arrive: a mirror
         # product fetches tens of thousands of parts in ONE pass, and a
         # transport failure mid-pass would otherwise leave every
@@ -203,6 +211,8 @@ def _build_product(
         _record.arrived += 1
         if _record.arrived % _MANIFEST_FLUSH_PARTS == 0:
             write_manifest(directory, manifest)
+            if cache is not None:
+                cache.save_if_dirty()
         # an upstream manifest of the directory has arrived (the
         # official bulkdl script; for rorig also the directory index):
         # the design now enumerates every file they list
@@ -309,6 +319,8 @@ def _build_product(
         if not _fetch_all(pending):
             break
     write_manifest(directory, manifest)
+    if cache is not None:
+        cache.save_if_dirty()
 
 
 def _apply_select(products, patterns: list[str] | None):
@@ -349,9 +361,15 @@ def build_database(
     official package, whole. A ``None`` keeps the existing blueprint —
     completing a previous build. Missing parts are fetched through the
     family adapter (streamed, sha256 recorded in the MANIFEST at
-    arrival); products with nonconforming parts are skipped with a
-    notice, never patched. ``dry_run=True`` reports the plan and touches
-    nothing.
+    arrival); every present part with recorded evidence is verified
+    against both its size and its sha256 — a size mismatch is
+    nonconforming on its own; a matching size still pays the sha256
+    comparison, served from the database's quick-signature cache
+    (``signature_cache.json``; unchanged files cost one stat — see
+    :mod:`stellarlib.database.signature_cache`, also for the
+    delete-to-re-verify rule). Products with nonconforming parts are
+    skipped with a notice, never patched. ``dry_run=True`` reports the
+    plan and touches nothing.
 
     ``select`` restricts what this one run fetches — a list of glob
     patterns matched against product paths (``"family/collection/
@@ -401,7 +419,11 @@ def build_database(
 
     if dry_run:
         root.mkdir(parents=True, exist_ok=True)
-        report = scan_database(root, declarations=list(declarations or []))
+        report = scan_database(
+            root,
+            declarations=list(declarations or []),
+            signature_cache=SignatureCache(root, writable=False),
+        )
         shown = _apply_select(report.products, patterns)
         for product in shown:
             missing = [
@@ -438,7 +460,8 @@ def build_database(
 
     root.mkdir(parents=True, exist_ok=True)
     _write_designs(root, merged)
-    report = scan_database(root)
+    cache = SignatureCache(root)
+    report = scan_database(root, signature_cache=cache)
 
     from stellarlib.database.scan import ADAPTERS
 
@@ -454,9 +477,11 @@ def build_database(
             _build_product(
                 product.design, adapter, root, session, log,
                 workers=workers, session_factory=session_factory,
+                cache=cache,
             )
 
         refresh_inventory(root)
+        cache.save_if_dirty()
         return open_database(root)
     finally:
         if own_session:
@@ -508,6 +533,7 @@ def register_local_product(
 
     target_dir = root / family / collection / label
     target_dir.mkdir(parents=True, exist_ok=True)
+    cache = SignatureCache(root)
     parts: dict[str, dict] = {}
     for src in path_list:
         if copy:
@@ -518,10 +544,12 @@ def register_local_product(
         else:
             dest = src
             recorded_path = str(src.resolve())
+        digest = sha256_file(dest)
+        cache.remember(dest, digest)
         parts[src.name] = {
             "file": src.name,
             "path": recorded_path,
-            "sha256": sha256_file(dest),
+            "sha256": digest,
             "size_bytes": dest.stat().st_size,
             "retrieved_at": _now_iso(),
             "url": None,
@@ -540,6 +568,7 @@ def register_local_product(
     )
     manifest["parts"] = parts
     write_manifest(target_dir, manifest)
+    cache.save_if_dirty()
     refresh_inventory(root)
     return ProductRecord(directory=target_dir, manifest=manifest)
 

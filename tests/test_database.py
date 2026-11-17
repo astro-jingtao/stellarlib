@@ -31,6 +31,7 @@ from stellarlib.database.manifest import (
     write_manifest,
 )
 from stellarlib.database.scan import scan_database
+from stellarlib.database.signature_cache import SignatureCache
 from stellarlib.exceptions import DataIntegrityError
 
 DATA = Path(__file__).parent / "data" / "bosz"
@@ -407,13 +408,16 @@ def _sha_str(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
-class TestCheapPartVerdict:
-    """The size fast path of classify_part_generic: a recorded
-    size_bytes that matches clears a present part without reading a
-    byte; any disagreement (or a record without a size) falls through
-    to the sha256 authority."""
+class TestManifestIntegrityVerdict:
+    """classify_part_generic judges a present part with recorded
+    evidence against BOTH recorded quantities: a size mismatch is the
+    verdict on its own (identical bytes cannot have different sizes);
+    a matching size still pays the sha256 comparison — never skipped
+    on size equality alone — served through the signature cache when
+    one is given."""
 
-    def _classify(self, tmp_path, *, size_entry, payload=None, part=None):
+    def _classify(self, tmp_path, *, size_entry, payload=None, part=None,
+                  cache=None):
         part = part or SOLAR_NAMES[0]
         payload = payload if payload is not None else (
             DATA / part).read_bytes()
@@ -430,33 +434,82 @@ class TestCheapPartVerdict:
             part=PartDesign(name=part),
             directory=tmp_path,
             manifest={"parts": {part: entry}},
+            cache=cache,
         )
 
-    def test_matching_size_is_ok_without_hashing(
+    def test_size_mismatch_is_nonconforming_without_hashing(
             self, tmp_path, monkeypatch):
         import stellarlib.database.design as design_mod
 
         def _forbidden(*args, **kwargs):
-            raise AssertionError("fast path must not hash")
+            raise AssertionError("a size mismatch needs no hash read")
 
         monkeypatch.setattr(design_mod, "sha256_file", _forbidden)
+        verdict = self._classify(tmp_path, size_entry="stale")
+        assert verdict.kind == VerdictKind.NONCONFORMING
+        assert "size" in verdict.reasons[0]
+
+    def test_matching_size_still_pays_the_sha256_comparison(
+            self, tmp_path, monkeypatch):
+        import stellarlib.database.design as design_mod
+
+        counted = {"n": 0}
+        real = design_mod.sha256_file
+
+        def _counting(path, *args, **kwargs):
+            counted["n"] += 1
+            return real(path, *args, **kwargs)
+
+        monkeypatch.setattr(design_mod, "sha256_file", _counting)
         verdict = self._classify(tmp_path, size_entry="match")
         assert verdict.kind == VerdictKind.OK
+        assert counted["n"] == 1
 
-    def test_stale_size_falls_through_to_sha_authority(self, tmp_path):
-        # a stale size with intact content: the sha256 clears the part
-        verdict = self._classify(tmp_path, size_entry="stale")
-        assert verdict.kind == VerdictKind.OK
-
-    def test_tampered_file_is_nonconforming(self, tmp_path):
-        verdict = self._classify(tmp_path, size_entry="stale",
+    def test_tampered_file_with_different_size(self, tmp_path):
+        verdict = self._classify(tmp_path, size_entry="match",
                                  payload=b"tampered")
+        assert verdict.kind == VerdictKind.NONCONFORMING
+        assert "size" in verdict.reasons[0]
+
+    def test_tampered_file_with_same_size(self, tmp_path):
+        original = (DATA / SOLAR_NAMES[0]).read_bytes()
+        verdict = self._classify(
+            tmp_path, size_entry="match",
+            payload=bytes([original[0] ^ 1]) + original[1:],
+        )
         assert verdict.kind == VerdictKind.NONCONFORMING
         assert "sha256" in verdict.reasons[0]
 
     def test_record_without_size_hashes(self, tmp_path):
         # legacy entries (no size_bytes) keep the sha256-only semantics
         verdict = self._classify(tmp_path, size_entry=None)
+        assert verdict.kind == VerdictKind.OK
+
+    def test_cache_serves_the_hash_of_an_unchanged_file(
+            self, tmp_path, monkeypatch):
+        import stellarlib.database.signature_cache as sig_mod
+
+        def _forbidden(*args, **kwargs):
+            raise AssertionError("an unchanged file must not be re-read")
+
+        monkeypatch.setattr(sig_mod, "sha256_file", _forbidden)
+        part = SOLAR_NAMES[0]
+        path = tmp_path / part
+        path.write_bytes((DATA / part).read_bytes())
+        entry = {
+            "file": part,
+            "sha256": _sha(DATA / part),
+            "size_bytes": (DATA / part).stat().st_size,
+        }
+        cache = SignatureCache(tmp_path)
+        cache.remember(path, _sha(DATA / part))
+        verdict = classify_part_generic(
+            design=None,
+            part=PartDesign(name=part),
+            directory=tmp_path,
+            manifest={"parts": {part: entry}},
+            cache=cache,
+        )
         assert verdict.kind == VerdictKind.OK
 
     def test_absent_part_is_missing_regardless_of_records(
@@ -469,6 +522,141 @@ class TestCheapPartVerdict:
             manifest={"parts": {}},
         )
         assert verdict.kind == VerdictKind.MISSING
+
+
+class TestSignatureCache:
+    """The database's quick-signature sha256 cache: a file that did
+    not change since its last hash is verified with one stat on every
+    later scan. The store is derived data — delete it to force a full
+    re-verify — and its keys are relative to the database root, so a
+    within-machine move or alias keeps it valid."""
+
+    def _built_db(self, tmp_path):
+        build_database(
+            tmp_path, declarations=[{"family": "bosz"}],
+            session=_mirror_session(),
+        )
+
+    def _count_reads(self, monkeypatch):
+        import stellarlib.database.signature_cache as sig_mod
+
+        counted = {"n": 0}
+        real = sig_mod.sha256_file
+
+        def _counting(path, *args, **kwargs):
+            counted["n"] += 1
+            return real(path, *args, **kwargs)
+
+        monkeypatch.setattr(sig_mod, "sha256_file", _counting)
+        return counted
+
+    def _mirror(self, report):
+        return next(
+            p for p in report.products
+            if p.label_path == "bosz/r500/m+0.00"
+        )
+
+    def test_fetch_time_hashes_feed_the_cache(self, tmp_path, monkeypatch):
+        self._built_db(tmp_path)
+        assert (tmp_path / "signature_cache.json").is_file()
+        reads = self._count_reads(monkeypatch)
+        report = scan_database(tmp_path)
+        assert reads["n"] == 0
+        assert self._mirror(report).state == "complete"
+
+    def test_cache_holds_keys_relative_to_the_root(self, tmp_path):
+        self._built_db(tmp_path)
+        part = tmp_path / "bosz" / "r500" / "m+0.00" / SOLAR_NAMES[0]
+        st = part.stat()
+        store = json.loads(
+            (tmp_path / "signature_cache.json").read_text(encoding="utf-8")
+        )
+        expected_key = f"bosz/r500/m+0.00/{SOLAR_NAMES[0]}_{st.st_size}_{st.st_mtime_ns}"
+        assert store[expected_key] == _sha(DATA / SOLAR_NAMES[0])
+        assert not any(str(tmp_path) in key for key in store)
+
+    def test_deleted_cache_is_rebuilt_by_a_scan(
+            self, tmp_path, monkeypatch):
+        self._built_db(tmp_path)
+        (tmp_path / "signature_cache.json").unlink()
+        reads = self._count_reads(monkeypatch)
+        scan_database(tmp_path)
+        assert reads["n"] > 0
+        assert (tmp_path / "signature_cache.json").is_file()
+
+    def test_moving_the_database_keeps_the_cache_valid(
+            self, tmp_path, monkeypatch):
+        self._built_db(tmp_path)
+        moved = tmp_path.parent / (tmp_path.name + "-moved")
+        tmp_path.rename(moved)
+        reads = self._count_reads(monkeypatch)
+        report = scan_database(moved)
+        assert reads["n"] == 0
+        assert self._mirror(report).state == "complete"
+
+    def test_symlinked_database_alias_keeps_keys_stable(
+            self, tmp_path, monkeypatch):
+        import os
+
+        self._built_db(tmp_path)
+        alias = tmp_path.parent / (tmp_path.name + "-alias")
+        os.symlink(tmp_path, alias)
+        try:
+            reads = self._count_reads(monkeypatch)
+            report = scan_database(alias)
+            assert reads["n"] == 0
+            assert self._mirror(report).state == "complete"
+        finally:
+            alias.unlink()
+
+    def test_dry_run_verifies_but_never_writes_the_cache(
+            self, tmp_path, monkeypatch):
+        self._built_db(tmp_path)
+        (tmp_path / "signature_cache.json").unlink()
+        reads = self._count_reads(monkeypatch)
+        build_database(tmp_path, dry_run=True)
+        assert reads["n"] > 0  # verdicts stay strict without a cache
+        assert not (tmp_path / "signature_cache.json").exists()
+
+    def test_quick_signature_trust_boundary(self, tmp_path, monkeypatch):
+        # the documented boundary: the cache answers by quick
+        # signature, so a same-size edit with a restored mtime is
+        # beyond its detection — deleting the cache forces the full
+        # re-verify that catches it
+        import os
+
+        self._built_db(tmp_path)
+        part = tmp_path / "bosz" / "r500" / "m+0.00" / SOLAR_NAMES[0]
+        st = part.stat()
+        data = bytearray(part.read_bytes())
+        data[0] ^= 1
+        part.write_bytes(bytes(data))
+        os.utime(part, ns=(st.st_atime_ns, st.st_mtime_ns))
+        reads = self._count_reads(monkeypatch)
+        assert self._mirror(scan_database(tmp_path)).state == "complete"
+        assert reads["n"] == 0  # served from the cache: undetected
+        (tmp_path / "signature_cache.json").unlink()
+        report = scan_database(tmp_path)
+        assert self._mirror(report).state == "incomplete"
+        verdict = next(
+            v for v in self._mirror(report).verdicts
+            if v.part == SOLAR_NAMES[0]
+        )
+        assert verdict.kind == VerdictKind.NONCONFORMING
+
+    def test_registration_feeds_the_cache(self, tmp_path, monkeypatch):
+        register_local_product(
+            tmp_path, "bosz", "reg",
+            files=[DATA / name for name in SOLAR_NAMES[:2]],
+            note="registered subset",
+        )
+        reads = self._count_reads(monkeypatch)
+        report = scan_database(tmp_path)
+        assert reads["n"] == 0
+        product = next(
+            p for p in report.products if p.label_path == "bosz/r500/reg"
+        )
+        assert product.state == "complete"
 
 
 class TestBuild:

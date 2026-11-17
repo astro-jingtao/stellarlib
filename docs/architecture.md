@@ -151,6 +151,26 @@ files actually held). Everything at the root (`database.json`, `README.md`,
 `unified-parameters.md`, `db_status.*`) is regenerated from directory
 contents alone, never copied between machines.
 
+A present part with recorded evidence is verified against both recorded
+quantities on every scan and build: a size mismatch is nonconforming on
+its own (identical bytes cannot have different sizes), and a matching
+size still pays the sha256 comparison — size equality never substitutes
+for content verification. That comparison is served from the database's
+**signature cache** (`signature_cache.json`, built on the
+`file_quick_signature` key grammar): each file's quick signature — path
+relative to the database root, plus size and mtime_ns — maps to its
+sha256, so a file that did not change since its last hash is verified
+with one `stat`. Fetch-time streaming hashes and registration hashes
+feed the cache, so a freshly built product is never re-read. The cache
+is a derived accelerator, never an authority: deleting it is always
+safe and forces one full re-verify on the next scan. Keys are relative
+to the root, so moving or renaming the database within one machine
+keeps the cache valid; there is deliberately no cross-machine
+invalidation — after migrating a database to another machine, delete
+`signature_cache.json` (an mtime-preserving copy such as `cp -a` or
+`tar` transfers content unverified, while a fresh `rsync` verifies by
+checksum).
+
 Each family mirrors its upstream exactly at the granularity the source
 publishes (the verified facts and scales live in docs/data-sources.md):
 

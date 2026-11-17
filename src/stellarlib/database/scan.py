@@ -21,6 +21,7 @@ from stellarlib.database.design import (
     ProductDesign,
     VerdictKind,
 )
+from stellarlib.database.signature_cache import SignatureCache
 from stellarlib.models.bosz.design import BOSZ_ADAPTER
 from stellarlib.models.tlusty.design import TLUSTY_ADAPTER
 
@@ -168,18 +169,28 @@ def _manifest_of(directory: Path) -> dict | None:
 
 
 def scan_database(
-    database: str | Path, declarations: list[dict] | None = None
+    database: str | Path,
+    declarations: list[dict] | None = None,
+    signature_cache: SignatureCache | None = None,
 ) -> DatabaseReport:
     """Scan one database root: every designed product, every part judged.
 
     ``declarations`` adds blueprint entries for this scan only (used by
     ``build_database(dry_run=True)`` to plan without writing design.json).
+    ``signature_cache`` accelerates the per-part integrity check (see
+    :class:`~stellarlib.database.signature_cache.SignatureCache`); one is
+    created, learned from, and saved when omitted — pass
+    ``SignatureCache(root, writable=False)`` for a scan that must write
+    nothing (dry-run planning).
     """
     from stellarlib.database.manifest import read_manifest
 
     root = Path(database)
     if not root.is_dir():
         raise NotADirectoryError(root)
+    own_cache = signature_cache is None
+    if own_cache:
+        signature_cache = SignatureCache(root)
 
     designs: dict[str, tuple[ProductDesign, FamilyAdapter]] = {}
     for declaration in [*_read_declarations(root), *(declarations or [])]:
@@ -226,7 +237,7 @@ def scan_database(
                     ),
                 )
         verdicts = tuple(
-            adapter.classify_part(design, part, directory, manifest)
+            adapter.classify_part(design, part, directory, manifest, signature_cache)
             for part in design.parts
         )
         state = (
@@ -263,6 +274,8 @@ def scan_database(
         if relative not in registered and relative not in designs:
             unregistered.append(relative)
 
+    if own_cache:
+        signature_cache.save_if_dirty()
     return DatabaseReport(
         root=root, products=tuple(reports), unregistered=tuple(unregistered)
     )

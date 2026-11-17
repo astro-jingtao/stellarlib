@@ -16,6 +16,7 @@ import dataclasses
 from pathlib import Path
 from typing import Iterable, Mapping, Protocol
 
+from stellarlib.database.signature_cache import SignatureCache
 from stellarlib.integrity import sha256_file
 
 __all__ = [
@@ -91,6 +92,7 @@ def classify_part_generic(
     part: PartDesign,
     directory: Path,
     manifest: Mapping,
+    cache: SignatureCache | None = None,
 ) -> PartVerdict:
     """The generic part classification, shared by every family.
 
@@ -99,25 +101,36 @@ def classify_part_generic(
     retries it on the next run). nonconforming: present but failing the
     recorded integrity evidence. ok: present and passing.
 
-    The cheap path first: a part whose recorded ``size_bytes`` matches
-    the file's size is ok without reading a byte (the size is recorded
-    at fetch time on every part). Any disagreement — or a record without
-    ``size_bytes`` — falls through to the sha256 authority: a full read
-    that either clears the part (a stale size with intact content) or
-    marks it nonconforming. The sha256 stays recorded for exactly these
-    authoritative passes; sizes only ever gate them.
+    A present part with a recorded sha256 is verified against BOTH
+    recorded quantities: a size mismatch is the verdict on its own —
+    identical bytes cannot have different sizes, so there is nothing a
+    full read could clear — and a matching size proceeds to the sha256
+    comparison, never skipped on size equality alone. ``cache`` (the
+    database's quick-signature cache) serves that sha256 answer
+    without reading an unchanged file; without one, every check is a
+    full read. A record without sha256 (a 404 attempt, a checksum-less
+    registration) leaves the part ok with no evidence to check.
     """
     path = directory / part.name
-    recorded = (manifest.get("parts") or {}).get(part.name)
     if not path.exists():
         return PartVerdict(part=part.name, kind=VerdictKind.MISSING)
+    recorded = (manifest.get("parts") or {}).get(part.name)
     expected = (recorded or {}).get("sha256")
     if expected is None:
         return PartVerdict(part=part.name, kind=VerdictKind.OK)
     size_expected = (recorded or {}).get("size_bytes")
-    if size_expected is not None and path.stat().st_size == size_expected:
-        return PartVerdict(part=part.name, kind=VerdictKind.OK)
-    actual = sha256_file(path)
+    if size_expected is not None:
+        size_actual = path.stat().st_size
+        if size_actual != size_expected:
+            return PartVerdict(
+                part=part.name,
+                kind=VerdictKind.NONCONFORMING,
+                reasons=(
+                    f"integrity: size {size_actual} != recorded "
+                    f"{size_expected} bytes",
+                ),
+            )
+    actual = cache.sha256(path) if cache is not None else sha256_file(path)
     if actual.lower() != str(expected).lower():
         return PartVerdict(
             part=part.name,
@@ -155,7 +168,7 @@ class FamilyAdapter(Protocol):
 
     def classify_part(
         self, design: ProductDesign, part: PartDesign, directory: Path,
-        manifest: Mapping,
+        manifest: Mapping, cache: SignatureCache | None = None,
     ) -> PartVerdict:
         ...
 

@@ -9,6 +9,9 @@ adapters under ``models/<family>/design.py``)::
         README.md                  # human summary (regenerated)
         unified-parameters.md      # mapping documentation snapshot
         db_status.md / .json       # two-state scan report (regenerated)
+        signature_cache.json       # sha256-by-quick-signature cache
+                                   # (derived accelerator; delete to
+                                   # force a full re-verify)
         <family>/<collection>/<label>/
             MANIFEST.json          # parts, checksums, identity, format
             <data files>           # whole official packages: directory
