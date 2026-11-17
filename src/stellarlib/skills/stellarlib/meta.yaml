@@ -1,0 +1,17 @@
+# The stellarlib usage skill's EXTERNAL metadata — read at deploy time;
+# never deployed with the skill itself.
+
+requires:
+  - kind: python-package
+    name: stellarlib
+    note: >
+      The skill documents the installed stellarlib package and its
+      examples import it. The skill ships inside that package, so any
+      machine holding this file already satisfies the requirement;
+      verify with `python -c "import stellarlib"` when in doubt.
+
+notes:
+  - >
+    User-facing usage only (reading, mirroring, verifying, querying
+    libraries). Package development (tests, repository layout,
+    release process) is deliberately not the skill's subject.

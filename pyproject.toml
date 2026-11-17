@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "stellarlib"
 version = "0.1.2"
-description = "Faithful and unified access to theoretical stellar spectral libraries."
+description = "Faithful and unified access to published stellar spectral libraries."
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
@@ -51,6 +51,13 @@ where = ["src"]
 "stellarlib.registry" = ["*.json"]
 "stellarlib.models.bosz" = ["*.json"]
 "stellarlib.models.tlusty" = ["*.json"]
+"stellarlib.models.miles" = ["*.json"]
+"stellarlib.skills" = [
+    "SKILL-DEPLOY.md",
+    "stellarlib/skill/*.md",
+    "stellarlib/skill/references/*.md",
+    "stellarlib/meta.yaml",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
