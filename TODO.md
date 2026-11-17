@@ -24,3 +24,19 @@ gap and the constraint any solution must respect; none of these are bugs.
   rewrites or replaces the native files. Undecided so far: which shared
   grid (a fixed per-product grid versus a per-query target grid), and how
   the choice is exposed on the grid/materialize API.
+
+## combined wide-band channel — deliberately deferred here
+
+- Downstream needs spectra of one star stitched across families into one
+  wide band (an empirical optical library such as MILES/STELIB alongside
+  a theoretical BOSZ/TLUSTY section), integrated over a stated κ-domain
+  contract. v1 is downstream-side assembly: stellarlib's part is to keep
+  every family readable and to expose an explicit, provenance-recorded
+  resample onto a shared wavelength grid — no combined facade yet.
+- The mixing rule is the open design question any combined facade must
+  settle first: empirical libraries publish relative flux while the
+  theoretical families publish F_λ surface flux, so a combined channel
+  needs an explicit renormalization rule (where the anchor segment is,
+  how the scale factor is computed and recorded in provenance). That
+  rule must be documented on both sides before a facade here is more
+  than an implicit, unrecorded scaling.
