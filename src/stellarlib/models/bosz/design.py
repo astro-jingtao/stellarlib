@@ -28,13 +28,9 @@ retried on the next build.
 from __future__ import annotations
 
 import dataclasses
-import hashlib
 import re
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, Mapping
-
-import requests
 
 from stellarlib.database.design import (
     PartDesign,
@@ -42,6 +38,7 @@ from stellarlib.database.design import (
     ProductDesign,
     VerdictKind,
     classify_part_generic,
+    fetch_streamed_part,
 )
 from stellarlib.database.signature_cache import SignatureCache
 from stellarlib.exceptions import SourceUnavailableError
@@ -57,8 +54,6 @@ __all__ = [
     "BOSZ_METALLICITIES",
 ]
 
-_CHUNK = 1 << 20
-_TIMEOUT_GET = 1800
 _BASE = "https://archive.stsci.edu/hlsps/bosz/bosz2024"
 
 # The verified upstream inventory (docs/data-sources.md, catalog.json):
@@ -359,44 +354,7 @@ class BoszAdapter:
             raise SourceUnavailableError(
                 f"{part.name}: no fetch URL in the design"
             )
-        own_session = session is None
-        if own_session:
-            session = requests.Session()
-            session.headers["User-Agent"] = "stellarlib (spectral database builder)"
-        try:
-            target = directory / part.name
-            digest = hashlib.sha256()
-            tmp = target.with_suffix(target.suffix + ".part")
-            response = session.get(part.url, stream=True, timeout=_TIMEOUT_GET)
-            if response.status_code == 404:
-                log(f"  404 {part.name} (fetch failed; part stays missing)")
-                return {
-                    "file": part.name,
-                    "http_status": 404,
-                    "error": "not found",
-                    "url": part.url,
-                    "attempted_at": _now_iso(),
-                }
-            response.raise_for_status()
-            with open(tmp, "wb") as fh:
-                for chunk in response.iter_content(chunk_size=_CHUNK):
-                    fh.write(chunk)
-                    digest.update(chunk)
-            tmp.replace(target)
-            return {
-                "file": part.name,
-                "sha256": digest.hexdigest(),
-                "size_bytes": target.stat().st_size,
-                "retrieved_at": _now_iso(),
-                "url": part.url,
-            }
-        finally:
-            if own_session:
-                session.close()
-
-
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        return fetch_streamed_part(part, directory, session=session, log=log)
 
 
 BOSZ_ADAPTER = BoszAdapter()

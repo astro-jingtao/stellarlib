@@ -1,0 +1,50 @@
+{
+ "schema_version": 1,
+ "family": "miles",
+ "release": "2011",
+ "description": "The MILES empirical stellar library (Medium-resolution INT Library of Empirical Spectra): 985 observed stars, 3525-7500 A at 2.5 A FWHM, published at research.iac.es/proyecto/miles as one official FITS tarball plus the joined parameter table. The spectra = Sánchez-Blázquez et al. 2006; the parameters and the re-assessed resolution = Falcón-Barroso et al. 2011; v9.1 is the site's file revision. stellarlib's release label is 2011 (the parameter set's literature year); v9.1 is recorded in provenance.",
+ "base_url": "https://research.iac.es/proyecto/miles",
+ "landing_page_url": "https://research.iac.es/proyecto/miles/pages/stellar-libraries/miles-library.php",
+ "license": "no license statement found on the site (2026-11-17); research use with the references cited",
+ "url_templates": {
+  "library_tar": "{base_url}/media/tarfiles/Stellar_Libraries/MILES_library_v9.1_FITS.tar.gz",
+  "parameters": "{base_url}/media/tarfiles/Stellar_Libraries/paramsMILES_v9.1.txt",
+  "per_file_spectrum": "{base_url}/media/stellar_libraries/MILES/{filename}"
+ },
+ "verified": {
+  "date": "2026-11-17",
+  "library_tar": {
+   "url_ok": true,
+   "size_bytes": 14776258,
+   "last_modified": "2015-04-17",
+   "members": "exactly 985, flat, s0001.fits..s0985.fits, each 23,040 bytes",
+   "checksum_published": false
+  },
+  "parameters_table": {
+   "url_ok": true,
+   "size_bytes": 93533,
+   "rows": 985,
+   "s_numbers": "1..985 complete, no duplicates",
+   "stars_without_fe_h": 39,
+   "stars_fully_parameterized": 946
+  },
+  "per_file_urls": "s0001.fits and s0985.fits HEAD-checked 200 (23,040 bytes each); the per-file channel exists beside the tarball",
+  "out_of_product": "the site also publishes MILES_library_v9.1_ASCII.tar.gz (43,665,541 bytes; the same 985 spectra re-encoded as ASCII) and the CaT library (a different library); neither is part of this product"
+ },
+ "format_notes": [
+  "one FITS per star: REDUCEME product, primary image HDU with NAXIS2=1, NAXIS1=4367, BITPIX=-32; flux pixels verbatim (negatives included); no flux unit keyword",
+  "wavelength from the header's linear WCS: CRPIX1=1.0, CRVAL1=3500.0, CDELT1=0.9 A/pix, giving 3500.0-7429.4 A — the pixel domain; the cited coverage window is 3525-7500 A",
+  "the parameter table is fixed-width ASCII (columns located by the header labels Name/MILES/CaT/SpT/Teff/log g/[Fe/H]/Refs/Libraries); '--' marks a not-reported value; Refs encodes the parameter provenance codes and Libraries the star's membership letters (verbatim facts, never interpreted)",
+  "the FITS header carries OBJECT (star name), FITSFI (file name), AIRMASS (0.0), TIMEXPO (-999.0 sentinel) — REDUCEME header facts, preserved as stated"
+ ],
+ "references": [
+  {
+   "citation": "Sánchez-Blázquez, V., et al. 2006, MNRAS 371, 703",
+   "bibcode": "2006MNRAS.371..703S"
+  },
+  {
+   "citation": "Falcón-Barroso, J., et al. 2011, A&A 532, A95",
+   "bibcode": "2011A&A...532A..95F"
+  }
+ ]
+}

@@ -125,11 +125,17 @@ def _write_designs(root: Path, declarations: list[dict]) -> None:
 def _release_of(family: str, collection: str) -> str:
     if family == "bosz":
         return "2024"
+    if family == "miles":
+        return "2011"
     return collection
 
 
 def _format_of(family: str) -> str:
-    return {"bosz": "bosz_resam", "tlusty": "tlusty_vis"}[family]
+    return {
+        "bosz": "bosz_resam",
+        "tlusty": "tlusty_vis",
+        "miles": "miles_fits",
+    }[family]
 
 
 # persist the in-memory manifest after this many arrivals within one
@@ -799,6 +805,15 @@ def register_local_product(
         recognized = lambda p: recognize_tlusty(p) or p.name.endswith(".tar")
         collection = _tlusty_release(path_list)
         release = collection
+    elif family == "miles":
+        from stellarlib.models.miles.reader import (
+            PARAMS_NAME_RE as miles_params_name,
+            recognize_miles,
+        )
+
+        recognized = lambda p: recognize_miles(p) or miles_params_name.match(p.name) is not None
+        collection = "library"
+        release = "2011"
     else:
         raise ValueError(f"unknown family {family!r}")
 

@@ -13,8 +13,12 @@ the source publishes.
 from __future__ import annotations
 
 import dataclasses
+import hashlib
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, Mapping, Protocol
+
+import requests
 
 from stellarlib.database.signature_cache import SignatureCache
 from stellarlib.integrity import sha256_file
@@ -26,6 +30,8 @@ __all__ = [
     "VerdictKind",
     "FamilyAdapter",
     "classify_part_generic",
+    "fetch_streamed_part",
+    "FETCH_USER_AGENT",
 ]
 
 
@@ -39,7 +45,7 @@ class PartDesign:
 
     name: str
     url: str | None = None
-    role: str = "spectrum"  # "spectrum" | "lineid" | "bulk_manifest" | "directory_index" | "wavelength_grid" | "archive"
+    role: str = "spectrum"  # "spectrum" | "lineid" | "bulk_manifest" | "directory_index" | "wavelength_grid" | "archive" | "parameters" | "provenance_snapshot"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -138,6 +144,67 @@ def classify_part_generic(
             reasons=(f"integrity: sha256 {actual} != recorded {expected}",),
         )
     return PartVerdict(part=part.name, kind=VerdictKind.OK)
+
+
+FETCH_USER_AGENT = "stellarlib (spectral database builder)"
+_FETCH_CHUNK = 1 << 20
+_FETCH_TIMEOUT_GET = 1800
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def fetch_streamed_part(
+    part: PartDesign,
+    directory: Path,
+    *,
+    session=None,
+    log=print,
+) -> Mapping:
+    """Fetch one designed part over HTTP into its product directory.
+
+    The body is streamed into an atomic temporary (whole file or
+    nothing), the sha256 is computed on the fly, and the returned
+    mapping is the part's MANIFEST entry. An HTTP 404 is returned as a
+    recorded failed attempt (the part stays missing — no publication
+    claim is inferred from a status); every other transport error
+    propagates. A ``None`` session creates a plain one.
+    """
+    own_session = session is None
+    if own_session:
+        session = requests.Session()
+        session.headers["User-Agent"] = FETCH_USER_AGENT
+    try:
+        target = directory / part.name
+        digest = hashlib.sha256()
+        tmp = target.with_suffix(target.suffix + ".part")
+        response = session.get(part.url, stream=True, timeout=_FETCH_TIMEOUT_GET)
+        if response.status_code == 404:
+            log(f"  404 {part.name} (fetch failed; part stays missing)")
+            return {
+                "file": part.name,
+                "http_status": 404,
+                "error": "not found",
+                "url": part.url,
+                "attempted_at": _now_iso(),
+            }
+        response.raise_for_status()
+        with open(tmp, "wb") as fh:
+            for chunk in response.iter_content(chunk_size=_FETCH_CHUNK):
+                fh.write(chunk)
+                digest.update(chunk)
+        tmp.replace(target)
+        return {
+            "file": part.name,
+            "sha256": digest.hexdigest(),
+            "size_bytes": target.stat().st_size,
+            "retrieved_at": _now_iso(),
+            "url": part.url,
+        }
+    finally:
+        if own_session:
+            session.close()
 
 
 class FamilyAdapter(Protocol):

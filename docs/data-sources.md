@@ -235,6 +235,70 @@ G27500g300v10) and never fakes an aligned continuum. The site's root
 vhost currently redirects to an unrelated page; content is served under
 `/tlusty/Tlusty2002/` (recorded in the catalog's `base_url`).
 
+## MILES (the empirical library)
+
+Source: <https://research.iac.es/proyecto/miles> — the Medium-resolution
+INT Library of Empirical Spectra: 985 observed stars, 3525–7500 Å cited
+coverage at 2.5 Å FWHM. The spectra are Sánchez-Blázquez et al. 2006,
+MNRAS 371, 703; the stellar parameters and the re-assessed resolution
+are Falcón-Barroso et al. 2011, A&A 532, A95. v9.1 is the site's file
+revision (corrected radial velocities, re-assessed resolution); the
+stellarlib release label is `miles/2011` (the parameter set's literature
+year) and v9.1 rides in the provenance.
+
+### Channel (verified live 2026-11-17)
+
+The library's official package is one FITS tarball,
+`MILES_library_v9.1_FITS.tar.gz` (14,776,258 bytes; site Last-Modified
+2015-04-17; exactly 985 flat members `s0001.fits`..`s0985.fits`, each
+23,040 bytes; no checksum published). The parameter table
+`paramsMILES_v9.1.txt` (93,533 bytes) is published beside it, and the
+per-file channel `.../media/stellar_libraries/MILES/s?????.fits` exists
+too (HEAD-verified on s0001/s0985) — the same files the tarball holds.
+The stellarlib product `miles/library/all` mirrors the package: tarball
++ parameter table + the library page HTML snapshot (the official
+statement of the coverage, resolution, and flux-calibration facts),
+three parts, no subsets. The site also publishes an ASCII re-encoding of
+the same 985 spectra (`MILES_library_v9.1_ASCII.tar.gz`, 43,665,541
+bytes — same data, another format) and the CaT library (a different
+library); neither is in the product.
+
+### File format (verified against the official tarball 2026-11-17)
+
+- One FITS per star: a REDUCEME product — primary image HDU, NAXIS2=1,
+  NAXIS1=4367, BITPIX=-32. The flux pixels are the library's relative
+  flux (no unit keyword; negatives included — read verbatim, never
+  clipped).
+- Wavelength = the header's own linear WCS: CRPIX1=1.0, CRVAL1=3500.0,
+  CDELT1=0.9 Å/pix → pixel domain 3500.0–7429.4 Å. The cited coverage
+  window (3525–7500 Å) is the library's own statement; both are
+  recorded, neither adjusted.
+- The parameter table is fixed-width ASCII (columns located by the
+  header labels Name / MILES / CaT / SpT / Teff / log g / [Fe/H] /
+  Refs / Libraries); the MILES column holds the s-number each FITS is
+  named for — the join key. `--` marks a not-reported value. Star names
+  may contain spaces (e.g. "NGC 7789 971(946) Cl"), so the parse is
+  fixed-width, never whitespace-split.
+- 985 rows cover s0001–s0985 completely; 946 stars carry all three
+  query parameters; 39 report `--` for [Fe/H] (nearly all the M-dwarf
+  and hot-star tails).
+
+### Flux semantics (the empirical-library paradigm)
+
+The official library page: the continuum shape is carefully calibrated;
+an absolutely-calibrated subset is available only upon request from the
+authors. The distributed flux is therefore **relative with an arbitrary
+per-star normalization** — stellarlib maps it to the unified field
+`observed_flux` (unitless) and deliberately does not map
+`eddington_flux`/`surface_flux`: a model surface-flux label on a
+relatively-normalized observed spectrum would be a false claim. The
+stars form an observed scatter, not a grid, and a weighted mix of two
+arbitrary normalizations is not a spectrum of anything: queries are
+nearest-star only (`interp="voronoi"` is the default and multilinear is
+refused; `MilesSpectra`). Stars without complete parameters stay held
+and mirrored but carry no query coordinates — listed by s-number and
+name in the set's notes, never silently dropped.
+
 ## Pitfall index (all recorded in the registry notes too)
 
 1. resam has no wavelength column — pairing is explicit; row mismatch
@@ -250,3 +314,6 @@ vhost currently redirects to an unrelated page; content is served under
 5. Never mix air/vacuum or BOSZ/TLUSTY wavelength grids silently.
 6. Holes exist; `grid.holes` is the truth; multilinear refuses holed
    cells; voronoi is the hole-tolerant path.
+7. MILES flux is relative with arbitrary per-star normalization — never
+   interpolate between stars and never label it with a physical flux
+   unit; the 39 `[Fe/H]`-missing stars are recorded, not queryable.

@@ -15,6 +15,12 @@
       "description": "wavelength in micron (x * 1e-4)"
     },
     {
+      "name": "observed_flux",
+      "unit": null,
+      "representation": "linear",
+      "description": "observed flux of an empirical library's star — relative, with an arbitrary per-star normalization (unitless); mapped only by empirical families and never onto or from the model flux fields"
+    },
+    {
       "name": "eddington_flux",
       "unit": "erg/(s cm^2 Angstrom)",
       "representation": "linear",

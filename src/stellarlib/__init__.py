@@ -17,7 +17,13 @@ from stellarlib.database.build import (
 )
 from stellarlib.database.core import Database, open_database
 from stellarlib.exceptions import StellarLibError
-from stellarlib.facade import BoszSpectra, TlustySpectra, UnifiedSpectra, construct
+from stellarlib.facade import (
+    BoszSpectra,
+    MilesSpectra,
+    TlustySpectra,
+    UnifiedSpectra,
+    construct,
+)
 from stellarlib.grid import SpectrumGrid, open_grid
 from stellarlib.interp import (
     InterpolationRecord,
@@ -64,6 +70,7 @@ __all__ = [
     "UnifiedSpectra",
     "BoszSpectra",
     "TlustySpectra",
+    "MilesSpectra",
     "build_database",
     "verify_database",
     "VerifyReport",

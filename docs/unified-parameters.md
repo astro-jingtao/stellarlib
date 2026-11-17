@@ -16,6 +16,7 @@ Every field is traceable back to a native array. Transformations come from a fix
 |---|---|---|---|
 | `wavelength` | Angstrom | linear | wavelength of the sampling grid; the air/vacuum convention is the product's own (declared per family in notes) and is never converted |
 | `wavelength_um` | um | linear | wavelength in micron (x * 1e-4) |
+| `observed_flux` | — | linear | observed flux of an empirical library's star — relative, with an arbitrary per-star normalization (unitless); mapped only by empirical families and never onto or from the model flux fields |
 | `eddington_flux` | erg/(s cm^2 Angstrom) | linear | the Eddington flux H_lambda as published — the first angular moment of the specific intensity |
 | `surface_flux` | erg/(s cm^2 Angstrom) | linear | the astrophysical surface flux F_lambda = 4 pi H_lambda (4 pi * x) |
 | `continuum` | erg/(s cm^2 Angstrom) | linear | the continuum level as published, same units as the flux |
@@ -75,6 +76,43 @@ Field mapping version: `1`.
 
 - Meszaros, S., et al. 2024, A&A, 688, A197 (bibcode `2024A&A...688A.197M`)
 - Bohlin, G., et al. 2017, AJ, 154, 106 (the legacy BOSZ library) (bibcode `2017AJ....154..106B`)
+
+## miles (`miles`)
+
+Field mapping version: `1`.
+
+- One FITS file per star (REDUCEME product: a single-row image HDU, 4367 float32 pixels, 23,040 bytes each), named s0001.fits..s0985.fits in right-ascension order; the s-number is the join key to the parameter table's MILES column. The wavelength axis is the header's own linear WCS (CRPIX1=1, CRVAL1=3500.0, CDELT1=0.9 A/pix), giving the pixel domain 3500.0-7429.4 A; the library's cited coverage window is 3525-7500 A at 2.5 A FWHM — both are the upstream's own statements, recorded, never adjusted.
+- The flux carries no unit keyword and no physical calibration: the official library page states the continuum shape is carefully calibrated while an absolutely-calibrated subset is available only upon request from the authors. observed_flux is therefore unitless and relative, with an arbitrary per-star normalization, and eddington_flux/surface_flux are deliberately not mapped — a model surface-flux label on a relatively-normalized observed spectrum would be a false claim.
+- No interpolation is offered: the stars are an observed scatter in (Teff, log g, [Fe/H]) and each spectrum's normalization is arbitrary, so a weighted mix of two stars' fluxes is not a spectrum of anything. Queries are nearest-star (voronoi semantics: warned, recorded).
+- The parameter table is fixed-width ASCII; '--' marks a value it does not report. 39 of 985 stars report no [Fe/H] (among them nearly all the M-dwarf and hot-star tail): their files are held and mirrored like every other part, but they carry no query coordinates and are listed by s-number and name in the set's notes — never silently dropped.
+- NativeSpectrum.to_table() attaches the model-library flux unit (erg/s/cm^2/A) as its documentation convention; MILES flux is relative, so the unified view is the calibrated statement of what the numbers are.
+
+### library (`library`)
+
+#### Field mappings
+
+| Unified field | Native source | Origin | Transformation | Notes |
+|---|---|---|---|---|
+| `wavelength` | `wavelength` | native | — | the header's linear WCS axis (CRVAL1 + CDELT1 * (pixel - CRPIX1)) |
+| `wavelength_um` | `wavelength` | transformed_native | x * 1e-4 | — |
+| `observed_flux` | `flux` | native | — | the star's observed flux, relative (arbitrary per-star normalization; no unit keyword in the files) |
+| `eddington_flux` | — | missing | — | not mapped: the distributed library is not flux-calibrated in absolute terms (the calibrated subset is available from the authors upon request) |
+| `surface_flux` | — | missing | — | not mapped: an empirical observed spectrum has no model surface-flux meaning |
+| `continuum` | — | missing | — | no continuum column is published |
+
+#### Physical parameters
+
+| Parameter | Role | Value / source | Notes |
+|---|---|---|---|
+| `teff` | axis (varies across the published grid) | file values `teff` | — |
+| `log_surface_gravity` | axis (varies across the published grid) | file values `logg` | — |
+| `m_h` | axis (varies across the published grid) | file values `m_h` | — |
+| `spectral_resolution` | implicit (used by the model, not recoverable) | — | 2.5 A FWHM (Falcón-Barroso et al. 2011 re-assessment; the v9.1 revision's headline change); not a selectable product axis |
+
+### Scientific references
+
+- Sánchez-Blázquez, V., et al. 2006, MNRAS 371, 703 (the MILES library) (bibcode `2006MNRAS.371..703S`)
+- Falcón-Barroso, J., et al. 2011, A&A 532, A95 (updated stellar parameters and resolution) (bibcode `2011A&A...532A..95F`)
 
 ## TLUSTY OSTAR2002 / BSTAR2006 (`tlusty`)
 

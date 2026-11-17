@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+- The MILES empirical stellar library (985 observed stars,
+  research.iac.es) joins as the family `miles/2011` — the first
+  empirical library, under the scatter paradigm: the product mirrors the
+  whole official package (the FITS tarball, the parameter table, the
+  library page snapshot; three parts, no subsets), the stars join their
+  parameter rows by s-number, and the relative flux (arbitrary
+  per-star normalization, no unit keyword; the absolutely-calibrated
+  subset is available only from the authors) maps to the new unitless
+  unified field `observed_flux` — never onto `eddington_flux` or
+  `surface_flux`. Queries are nearest-star only: `voronoi` is
+  `MilesSpectra`'s default and `multilinear` is refused (a weighted mix
+  of two arbitrary normalizations is not a spectrum of anything). The
+  39 stars whose table row reports no [Fe/H] stay held and mirrored but
+  carry no query coordinates — recorded by s-number and name in the
+  set's notes, never silently dropped. The site's ASCII re-encoding of
+  the same spectra and the CaT library are documented but out of the
+  product. The wavelength axis is the FITS header's own linear WCS
+  (3500.0-7429.4 Å pixel domain vs the cited 3525-7500 Å window — both
+  recorded); README's scope now states empirical libraries explicitly.
+- The streamed part fetch (atomic temporary, on-the-fly sha256, 404
+  recorded as a failed attempt) moves to a shared
+  `fetch_streamed_part`; the BOSZ and TLUSTY adapters delegate to it.
 - `verify_database` runs one full-integrity pass over a database
   against its blueprint: recorded parts are re-checked against both
   recorded quantities, and present parts with no recorded sha256 —

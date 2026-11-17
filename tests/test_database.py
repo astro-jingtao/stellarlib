@@ -41,6 +41,7 @@ from stellarlib.exceptions import DataIntegrityError
 
 DATA = Path(__file__).parent / "data" / "bosz"
 TLUSTY_DATA = Path(__file__).parent / "data" / "tlusty"
+MILES_DATA = Path(__file__).parent / "data" / "miles"
 
 NODE_NAMES = [
     f"bosz2024_ms_t{t}_g{g}_m{m}_a+0.00_c+0.00_v2_r500_resam.txt.gz"
@@ -1509,6 +1510,82 @@ class TestRegisterLocalProduct:
         db = open_database(tmp_path)
         grid = db.grid("tlusty/OSTAR2002", label="g_tar")
         assert len(grid) == 4
+
+
+class TestMilesBlueprint:
+    _MILES = "https://research.iac.es/proyecto/miles"
+    _TARBALLS = f"{_MILES}/media/tarfiles/Stellar_Libraries"
+    TAR_URL = f"{_TARBALLS}/MILES_library_v9.1_FITS.tar.gz"
+    PARAMS_URL = f"{_TARBALLS}/paramsMILES_v9.1.txt"
+    PAGE_URL = f"{_MILES}/pages/stellar-libraries/miles-library.php"
+
+    def _session(self) -> FakeSession:
+        return FakeSession(
+            {
+                self.TAR_URL: (MILES_DATA / "miles_library_fixture.tar.gz").read_bytes(),
+                self.PARAMS_URL: (
+                    MILES_DATA / "paramsMILES_v9.1_excerpt.txt"
+                ).read_bytes(),
+                self.PAGE_URL: b"<html>library page snapshot</html>",
+            }
+        )
+
+    def test_build_completes_the_one_product(self, tmp_path):
+        db = build_database(
+            tmp_path,
+            declarations=[{"family": "miles"}],
+            session=self._session(),
+            log=lambda *_: None,
+        )
+        manifest = read_manifest(tmp_path / "miles" / "library" / "all")
+        assert manifest["release"] == "2011"
+        assert manifest["format"] == "miles_fits"
+        assert sorted(manifest["parts"]) == [
+            "MILES_library_v9.1_FITS.tar.gz",
+            "miles-library.html",
+            "paramsMILES_v9.1.txt",
+        ]
+        entry = manifest["parts"]["MILES_library_v9.1_FITS.tar.gz"]
+        assert entry["sha256"] == _sha(
+            MILES_DATA / "miles_library_fixture.tar.gz"
+        )
+        assert entry["url"] == self.TAR_URL
+        # the mirror opens as the empirical scatter, database-routed
+        grid = db.grid("miles/2011")
+        assert len(grid) == 3
+        assert grid.sets[0].notes["stars_without_parameters"] == [
+            {"s_number": 838, "name": "G156-031"}
+        ]
+        spectrum = grid.get_spectrum(
+            method="exact", teff=4020.0, log_surface_gravity=1.32, m_h=-0.13
+        )
+        assert len(spectrum) == 4367
+        from stellarlib.facade import construct
+
+        miles = construct("miles/2011", database=tmp_path)
+        assert miles.identity.release == "2011"
+        assert len(miles) == 3
+
+    def test_verify_database_passes_over_the_product(self, tmp_path):
+        build_database(
+            tmp_path,
+            declarations=[{"family": "miles"}],
+            session=self._session(),
+            log=lambda *_: None,
+        )
+        report = verify_database(tmp_path, log=lambda *_: None)
+        (v,) = report.products
+        assert v.label_path == "miles/library/all"
+        assert v.state == "complete"
+        assert v.recorded_ok == 3
+
+    def test_dry_run_plans_the_product(self, tmp_path, capsys):
+        build_database(
+            tmp_path, declarations=[{"family": "miles"}], dry_run=True
+        )
+        out = capsys.readouterr().out
+        assert "miles/library/all: incomplete (3 part(s) to fetch)" in out
+        assert "1 product(s)" in out
 
 
 class TestTlustyBlueprint:

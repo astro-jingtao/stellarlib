@@ -36,9 +36,10 @@ class TestRegistryData:
     def test_loads_and_lists_backends_and_products(self):
         reg = load_registry()
         assert reg["schema_version"] == 1
-        assert set(backend_names()) == {"bosz", "tlusty"}
+        assert set(backend_names()) == {"bosz", "tlusty", "miles"}
         assert product_names("bosz") == ("resampled_spectra",)
         assert set(product_names("tlusty")) == {"ostar2002", "bstar2006"}
+        assert product_names("miles") == ("library",)
 
     def test_unified_vocabulary_present(self):
         names = unified_field_names()
@@ -46,6 +47,7 @@ class TestRegistryData:
         for required in (
             "wavelength",
             "wavelength_um",
+            "observed_flux",
             "eddington_flux",
             "surface_flux",
             "continuum",
@@ -72,6 +74,14 @@ class TestFieldSpecs:
         specs = field_spec_dict("tlusty", "ostar2002")
         assert specs["continuum"].origin is FieldOrigin.MISSING
         assert specs["eddington_flux"].native_name == "flux"
+
+    def test_miles_maps_observed_flux_and_refuses_model_fluxes(self):
+        specs = field_spec_dict("miles", "library")
+        assert specs["observed_flux"].native_name == "flux"
+        assert specs["observed_flux"].unit is None
+        assert specs["eddington_flux"].origin is FieldOrigin.MISSING
+        assert specs["surface_flux"].origin is FieldOrigin.MISSING
+        assert specs["continuum"].origin is FieldOrigin.MISSING
 
     def test_transformed_fields_declare_implemented_transformation(self):
         for backend in backend_names():

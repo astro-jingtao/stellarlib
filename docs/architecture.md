@@ -107,6 +107,30 @@ Flux interpolation runs in the linear space the libraries publish
 (including the upstream-clipped exact-zero rows); quirks are recorded in
 the registry notes, never patched in code.
 
+### Empirical libraries: the scatter paradigm (MILES)
+
+An empirical library is not a model grid: its stars are observed points
+scattered through (Teff, log g, [M/H]) — 985 of them at MILES, 946
+carrying complete parameters — and each spectrum's flux is relative with
+an arbitrary per-star normalization. Both facts change the query
+contract, not the container: the product is still one whole official
+package (the FITS tarball + the parameter table + the page snapshot),
+still mirrored verbatim, still a `SpectrumSet` of lazy `GridNode`s —
+the coordinates now come from the table's row for each star (joined by
+the s-number), and `axes`/`holes` describe the scatter's own value sets.
+
+- The relative flux maps to the unified field `observed_flux` (unitless)
+  and never onto `eddington_flux`/`surface_flux` — a model flux label on
+  an arbitrarily-normalized observed spectrum would be a false claim.
+- Interpolation between stars is refused outright: a weighted mix of two
+  arbitrary normalizations is not a spectrum of anything. `voronoi`
+  (nearest star) is the default and only query path, warned and recorded
+  like everywhere else; `multilinear` raises.
+- Stars whose table row lacks any query parameter (39 MILES stars
+  report no [Fe/H]) remain held, mirrored, and verified data — they
+  carry no query coordinates and are recorded by s-number and name in
+  the set's notes, never silently dropped.
+
 ## The local database
 
 ```mermaid

@@ -31,7 +31,13 @@ from stellarlib.warnings import (
     VoronoiInterpolationWarning,
 )
 
-__all__ = ["UnifiedSpectra", "BoszSpectra", "TlustySpectra", "construct"]
+__all__ = [
+    "UnifiedSpectra",
+    "BoszSpectra",
+    "TlustySpectra",
+    "MilesSpectra",
+    "construct",
+]
 
 
 class UnifiedSpectra(SpectrumGrid, ABC):
@@ -496,6 +502,65 @@ class TlustySpectra(UnifiedSpectra):
         return cls(grid.sets)
 
 
+class MilesSpectra(UnifiedSpectra):
+    """MILES empirical stellar spectra under the unified interface.
+
+    An empirical library is an observed scatter, not a model grid: each
+    star's spectrum carries an arbitrary per-star normalization, so a
+    weighted mix of two stars' fluxes is not a spectrum of anything.
+    Point queries are therefore nearest-star only — the default
+    ``interp="voronoi"`` returns the nearest parameterized star, warned
+    and recorded; ``interp="multilinear"`` is refused outright.
+    """
+
+    model_name = "miles"
+
+    def spectrum(
+        self,
+        interp: str = "voronoi",
+        range_policy: str = "strict",
+        **coordinates,
+    ) -> Spectrum:
+        if interp == "multilinear":
+            raise ValueError(
+                "interp='multilinear' is not defined for MILES: the stars "
+                "are an empirical scatter whose spectra carry arbitrary "
+                "per-star normalizations — a weighted mix is not a "
+                "spectrum of anything; use interp='voronoi' (the nearest "
+                "parameterized star)"
+            )
+        return super().spectrum(
+            interp=interp, range_policy=range_policy, **coordinates
+        )
+
+    @classmethod
+    def construct(
+        cls,
+        paths=None,
+        params_path=None,
+        database=None,
+        label=None,
+    ) -> "MilesSpectra":
+        """Load MILES spectra from the library tarball, an extracted
+        directory or file list (``params_path=`` pins the parameter
+        table; it is discovered among the sources when omitted), or from
+        a database built with ``stellarlib.build_database`` (the library
+        is one product; ``label`` is accepted for uniformity and is
+        always ``"all"``)."""
+        if database is not None:
+            return cls(_database_grid("miles/2011", database, label).sets)
+        if paths is None:
+            raise ValueError(
+                "construct('miles/2011') requires paths= of the library "
+                "tarball, extracted files, or database= of a built database"
+            )
+        options = {} if params_path is None else {"params_path": params_path}
+        grid = SpectrumGrid.from_paths(
+            "miles", _as_path_list(paths), **options
+        )
+        return cls(grid.sets)
+
+
 def _database_grid(
     model: str, database, label, collection=None, **selection
 ) -> SpectrumGrid:
@@ -529,7 +594,7 @@ def _as_path_list(paths) -> list:
     return list(paths)
 
 
-_REGISTRY = {"bosz": BoszSpectra, "tlusty": TlustySpectra}
+_REGISTRY = {"bosz": BoszSpectra, "tlusty": TlustySpectra, "miles": MilesSpectra}
 
 
 def construct(

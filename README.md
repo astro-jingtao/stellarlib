@@ -1,11 +1,13 @@
 # stellarlib
 
-Faithful and unified access to theoretical stellar spectral libraries.
+Faithful and unified access to published stellar spectral libraries.
 
 stellarlib is a provenance-first, model-agnostic Python interface for reading,
-preserving, standardizing, and querying tabulated theoretical stellar spectra
-— model-atmosphere flux grids published on (Teff, log g, [M/H], ...) parameter
-nodes, starting with BOSZ 2024 and TLUSTY OSTAR2002/BSTAR2006.
+preserving, standardizing, and querying tabulated stellar spectra —
+model-atmosphere flux grids published on (Teff, log g, [M/H], ...) parameter
+nodes (BOSZ 2024, TLUSTY OSTAR2002/BSTAR2006) and empirical libraries of
+observed stars (MILES), each under a query contract faithful to what the
+data actually is.
 
 **Status: early development (v0.1.0).** The public API may still change.
 
@@ -16,6 +18,8 @@ In scope, for the initial release:
 - **BOSZ 2024** (MAST HLSP, resampled text products at several resolutions).
 - **TLUSTY OSTAR2002 / BSTAR2006** (tlusty.oca.eu, `*.vis.7.gz` optical
   spectra).
+- **MILES** (research.iac.es, the 985-star empirical library: official FITS
+  package + parameter table; relative flux, nearest-star queries).
 - Native-file reading with full fidelity, unified field vocabulary, grid
   construction with hole reporting, cross-node interpolation (multilinear,
   plus Voronoi nearest-node for grids with holes), wavelength resampling,
@@ -70,6 +74,17 @@ spec = grid.spectrum(teff=4125.0, log_surface_gravity=3.1, m_h=-0.3,
                      interp="voronoi")   # warns + records the node used
 ```
 
+Empirical libraries open the same way and answer with the nearest
+observed star — the flux is relative with an arbitrary per-star
+normalization, so interpolation between stars is refused, and the
+nearest-star choice is warned and recorded:
+
+```python
+miles = stellarlib.construct("miles/2011", database="my-db")
+spec = miles.spectrum(teff=4125.0, log_surface_gravity=1.4, m_h=-0.3)
+flux = spec.unified["observed_flux"]     # relative, unitless
+```
+
 The raw corner mechanism (corner order and flat indices exactly as the
 downstream sparse-matrix consumers expect) and the merged array block are
 both available:
@@ -85,12 +100,14 @@ The blueprint is a family-level declaration — it always covers every
 official package the source publishes (BOSZ: all 112 (broadening,
 metallicity) directory mirrors — the rorig ones include the
 line-identification files — plus the shared wavelength grids; TLUSTY:
-all 20 per-composition vispec tars) — and `build_database` completes
-what is missing, one whole unit at a time (`dry_run` first):
+all 20 per-composition vispec tars; MILES: the one official FITS
+package) — and `build_database` completes what is missing, one whole
+unit at a time (`dry_run` first):
 
 ```python
 stellarlib.build_database("my-db", dry_run=True,
-    declarations=[dict(family="bosz"), dict(family="tlusty")])
+    declarations=[dict(family="bosz"), dict(family="tlusty"),
+                  dict(family="miles")])
 db = stellarlib.open_database("my-db")
 ```
 
@@ -129,6 +146,7 @@ solar-scaled composition, the atmosphere-family vmicro):
 ```python
 grid = db.grid("bosz/2024", collection="r500", label="m+0.00")
 grid = db.grid("tlusty/OSTAR2002", label="G")   # one whole vispec tar
+miles = db.grid("miles/2011")                   # the whole empirical library
 ```
 
 Files you already hold (an extracted tar, a curated subset) still enter

@@ -1,0 +1,91 @@
+{
+ "schema_version": 1,
+ "family": "miles",
+ "description": "The MILES empirical stellar library's own characteristics and its mapping into the stellarlib unified vocabulary (definitions in registry/unified_parameters.json). Loaded and validated together with the definitions by stellarlib.registry.",
+ "mapping_version": "1",
+ "notes": [
+  "One FITS file per star (REDUCEME product: a single-row image HDU, 4367 float32 pixels, 23,040 bytes each), named s0001.fits..s0985.fits in right-ascension order; the s-number is the join key to the parameter table's MILES column. The wavelength axis is the header's own linear WCS (CRPIX1=1, CRVAL1=3500.0, CDELT1=0.9 A/pix), giving the pixel domain 3500.0-7429.4 A; the library's cited coverage window is 3525-7500 A at 2.5 A FWHM — both are the upstream's own statements, recorded, never adjusted.",
+  "The flux carries no unit keyword and no physical calibration: the official library page states the continuum shape is carefully calibrated while an absolutely-calibrated subset is available only upon request from the authors. observed_flux is therefore unitless and relative, with an arbitrary per-star normalization, and eddington_flux/surface_flux are deliberately not mapped — a model surface-flux label on a relatively-normalized observed spectrum would be a false claim.",
+  "No interpolation is offered: the stars are an observed scatter in (Teff, log g, [Fe/H]) and each spectrum's normalization is arbitrary, so a weighted mix of two stars' fluxes is not a spectrum of anything. Queries are nearest-star (voronoi semantics: warned, recorded).",
+  "The parameter table is fixed-width ASCII; '--' marks a value it does not report. 39 of 985 stars report no [Fe/H] (among them nearly all the M-dwarf and hot-star tail): their files are held and mirrored like every other part, but they carry no query coordinates and are listed by s-number and name in the set's notes — never silently dropped.",
+  "NativeSpectrum.to_table() attaches the model-library flux unit (erg/s/cm^2/A) as its documentation convention; MILES flux is relative, so the unified view is the calibrated statement of what the numbers are."
+ ],
+ "products": {
+  "library": {
+   "field_mappings": [
+    {
+     "unified": "wavelength",
+     "native": "wavelength",
+     "origin": "native",
+     "description": "the header's linear WCS axis (CRVAL1 + CDELT1 * (pixel - CRPIX1))"
+    },
+    {
+     "unified": "wavelength_um",
+     "native": "wavelength",
+     "origin": "transformed_native",
+     "transformation": "x * 1e-4"
+    },
+    {
+     "unified": "observed_flux",
+     "native": "flux",
+     "origin": "native",
+     "description": "the star's observed flux, relative (arbitrary per-star normalization; no unit keyword in the files)"
+    },
+    {
+     "unified": "eddington_flux",
+     "native": null,
+     "origin": "missing",
+     "description": "not mapped: the distributed library is not flux-calibrated in absolute terms (the calibrated subset is available from the authors upon request)"
+    },
+    {
+     "unified": "surface_flux",
+     "native": null,
+     "origin": "missing",
+     "description": "not mapped: an empirical observed spectrum has no model surface-flux meaning"
+    },
+    {
+     "unified": "continuum",
+     "native": null,
+     "origin": "missing",
+     "description": "no continuum column is published"
+    }
+   ],
+   "parameters": [
+    {
+     "name": "teff",
+     "role": "axis",
+     "values_from": "teff",
+     "source": "native"
+    },
+    {
+     "name": "log_surface_gravity",
+     "role": "axis",
+     "values_from": "logg",
+     "source": "native"
+    },
+    {
+     "name": "m_h",
+     "role": "axis",
+     "values_from": "m_h",
+     "source": "native"
+    },
+    {
+     "name": "spectral_resolution",
+     "role": "implicit",
+     "status": "2.5 A FWHM (Falcón-Barroso et al. 2011 re-assessment; the v9.1 revision's headline change); not a selectable product axis",
+     "source": "official_documentation"
+    }
+   ]
+  }
+ },
+ "references": [
+  {
+   "citation": "Sánchez-Blázquez, V., et al. 2006, MNRAS 371, 703 (the MILES library)",
+   "bibcode": "2006MNRAS.371..703S"
+  },
+  {
+   "citation": "Falcón-Barroso, J., et al. 2011, A&A 532, A95 (updated stellar parameters and resolution)",
+   "bibcode": "2011A&A...532A..95F"
+  }
+ ]
+}
