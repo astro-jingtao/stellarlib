@@ -12,6 +12,7 @@ completed) without the network.
 from __future__ import annotations
 
 import json
+import threading
 from pathlib import Path
 
 import pytest
@@ -698,6 +699,40 @@ class _RaisingSession(FakeSession):
         return FakeResponse(404, b"")
 
 
+class _BlockingSession(_RaisingSession):
+    """``get`` blocks for the URLs in ``block`` until ``release`` is set,
+    and a broken URL raises only after a blocked fetch is provably inside
+    ``get`` (``entered``) — pins one fetch in flight across a sibling
+    failure, making the drain contract deterministically observable.
+    ``order`` records the enter/fail/resume sequence for assertions."""
+
+    def __init__(self, mapping, broken, calls, block, release, entered, order):
+        super().__init__(mapping, broken, calls)
+        self._block = set(block)
+        self._release = release
+        self._entered = entered
+        self._order = order
+
+    def get(self, url, stream=True, timeout=None):
+        if url in self._block:
+            self._order.append(("enter", url.rsplit("/", 1)[-1]))
+            self._entered.set()
+            self._release.wait(timeout=30)
+            self._order.append(("resume", url.rsplit("/", 1)[-1]))
+            return super().get(url, stream=stream, timeout=timeout)
+        if url in self._broken:
+            self._calls.append(url)
+            # only fail once the blocked fetch is inside get(): the
+            # failure then provably strikes a batch with work in flight
+            self._entered.wait(timeout=30)
+            self._release.set()
+            self._order.append(("fail", url.rsplit("/", 1)[-1]))
+            import requests
+
+            raise requests.ConnectionError("simulated transport failure")
+        return super().get(url, stream=stream, timeout=timeout)
+
+
 class TestParallelFetch:
     def _factory(self, mapping, broken=None):
         calls: list = []
@@ -796,9 +831,61 @@ class TestParallelFetch:
         for name in good:
             assert (directory / name).is_file()
         assert not list(directory.glob("*.part"))
-        # the broken parts were attempted (and are the only missing ones)
-        for url in broken_urls:
-            assert url in calls
+        # the good parts were attempted (they sit first in the batch) and
+        # are recorded; the failure came from an attempted broken part.
+        # Which broken parts get attempted is deliberately NOT asserted:
+        # after the first failure the queued remainder is cancelled
+        # before starting — that is the drain+cancel contract, so "every
+        # broken url was attempted" is a race, not a guarantee
+        good_urls = [f"{_MAST}/r500/m+0.00/{name}" for name in good]
+        assert all(url in calls for url in good_urls)
+        assert set(calls) & set(broken_urls)
+        manifest = read_manifest(directory)
+        for name in good:
+            assert manifest["parts"][name]["sha256"] == _sha(DATA / name)
+
+    def test_parallel_failure_waits_for_inflight_fetches(self, tmp_path):
+        # a fetch IN FLIGHT when a sibling fails is drained to
+        # completion, never abandoned: its file lands atomically and its
+        # manifest entry is recorded even after the failure was seen
+        release = threading.Event()
+        entered = threading.Event()
+        order: list = []
+        calls: list = []
+        fast, slow, broken = SOLAR_NAMES[0], SOLAR_NAMES[1], SOLAR_NAMES[2]
+        slow_url = f"{_MAST}/r500/m+0.00/{slow}"
+        broken_url = f"{_MAST}/r500/m+0.00/{broken}"
+        mapping = {SCRIPT_URL: _bulkdl_text(SOLAR_NAMES[:3])}
+        for name in (fast, slow):
+            mapping[f"{_MAST}/r500/m+0.00/{name}"] = (DATA / name).read_bytes()
+
+        def make():
+            return _BlockingSession(
+                mapping, (broken_url,), calls, (slow_url,),
+                release, entered, order,
+            )
+
+        with pytest.raises(Exception, match="simulated transport failure"):
+            build_database(
+                tmp_path,
+                declarations=[{"family": "bosz"}],
+                select=["bosz/r500/m+0.00"],
+                workers=2,
+                session_factory=make,
+            )
+        # the slow fetch was provably inside get() before the failure
+        # struck, and did complete afterwards (drain, not abandon)
+        assert order.index(("enter", slow)) < order.index(("fail", broken))
+        assert ("resume", slow) in order
+        directory = tmp_path / "bosz" / "r500" / "m+0.00"
+        for name in (fast, slow):
+            assert (directory / name).is_file()
+        assert not (directory / broken).exists()
+        assert not list(directory.glob("*.part"))
+        manifest = read_manifest(directory)
+        for name in (fast, slow):
+            assert manifest["parts"][name]["sha256"] == _sha(DATA / name)
+        assert broken not in manifest["parts"]
 
     def test_workers_one_uses_the_sequential_session_path(self, tmp_path):
         mapping = {SCRIPT_URL: _bulkdl_text(SOLAR_NAMES[:1])}
