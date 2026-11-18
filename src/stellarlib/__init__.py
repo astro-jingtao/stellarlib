@@ -1,8 +1,9 @@
-"""stellarlib: faithful and unified access to theoretical stellar spectral libraries.
+"""stellarlib: faithful and unified access to published stellar spectral libraries.
 
 stellarlib is a provenance-first, model-agnostic Python interface for reading,
-preserving, standardizing, and querying theoretical stellar spectra published
-on (Teff, log g, [M/H], ...) parameter grids.
+preserving, standardizing, and querying stellar spectra — model-atmosphere
+flux grids on (Teff, log g, [M/H], ...) parameter nodes and empirical
+libraries of observed stars.
 """
 
 __version__ = "0.1.2"
@@ -16,6 +17,18 @@ from stellarlib.database.build import (
     verify_database,
 )
 from stellarlib.database.core import Database, open_database
+from stellarlib.database.transfer.export import (
+    ExportResult,
+    export_database,
+    rsync_command,
+    run_rsync,
+    verify_transfer,
+)
+from stellarlib.database.transfer.merge import (
+    MergeConflict,
+    MergeReport,
+    merge_database,
+)
 from stellarlib.exceptions import StellarLibError
 from stellarlib.facade import (
     BoszSpectra,
@@ -72,6 +85,14 @@ __all__ = [
     "BoszSpectra",
     "TlustySpectra",
     "MilesSpectra",
+    "MergeConflict",
+    "MergeReport",
+    "merge_database",
+    "ExportResult",
+    "export_database",
+    "verify_transfer",
+    "rsync_command",
+    "run_rsync",
     "StelibSpectra",
     "build_database",
     "verify_database",

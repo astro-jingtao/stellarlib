@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- Database transfer between machines: `export_database` writes a
+  declarative selection (`transfer.json` with every file and its
+  recorded sha256, the rsync path tables, and the receiving procedure;
+  `checksums="all"` hashes unrecorded files too), `run_rsync` /
+  `rsync_command` assemble the transport, and `merge_database` imports
+  one local database — or any partial copy of one, itself a legal
+  database — into another: whole sound products land as staged atomic
+  directory copies, sound parts complete matching products, everything
+  present stays, conflicts are recorded for a human and never
+  resolved, and derived root artifacts are regenerated, never copied.
+  The signature cache owns the migration rule the fast path needs: a
+  no-verify merge (default) invalidates exactly the migrated files'
+  cache entries (`SignatureCache.forget`/`forget_prefixes` — scoped,
+  never the whole store), so the next scan or `verify_database`
+  re-hashes the migrated portion once; a verifying merge hashes every
+  copied part against the source's recorded sha256 (a mismatch aborts
+  loudly) and seeds the cache with the verified answers.
+  `verify_transfer` checks a landed copy against its plan; products
+  registered by reference hold no data of their own and never merge.
+  `register_local_product` now accepts the `stelib` family.
 - The STELIB empirical stellar library (255 observed stars, VizieR
   catalog III/232) joins as the family `stelib/2003` — the second
   empirical library, under the same scatter paradigm: the product

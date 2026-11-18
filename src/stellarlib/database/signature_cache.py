@@ -32,6 +32,7 @@ from file_quick_signature.key import (
     apply_remappers,
     build_key,
     file_quick_signature,
+    parse_key,
 )
 from file_quick_signature.remapper import AbsoluteToRelativeRemapper
 from file_quick_signature.store import SignatureStore
@@ -108,6 +109,38 @@ class SignatureCache:
         key = self._store.signature(str(path))
         self._store.data[key] = digest
         self._dirty = True
+
+    def forget(self, paths) -> int:
+        """Drop every entry whose file path (relative to the root)
+        matches one of ``paths`` exactly; returns how many went. The
+        scoped form of deleting the whole store: the next scan re-hashes
+        exactly these files."""
+        return self._drop_if(
+            lambda rel: rel in {str(p).replace("\\", "/") for p in paths}
+        )
+
+    def forget_prefixes(self, prefixes) -> int:
+        """Drop every entry whose file path (relative to the root) lies
+        under one of ``prefixes`` (product directories, with or without
+        the trailing slash); returns how many went."""
+        cleaned = {
+            str(p).replace("\\", "/").rstrip("/") + "/" for p in prefixes
+        }
+        return self._drop_if(lambda rel: rel.startswith(tuple(cleaned)))
+
+    def _drop_if(self, matches) -> int:
+        if not self._writable:
+            return 0
+        doomed = [
+            key
+            for key in self._store.data
+            if matches(parse_key(key).path)
+        ]
+        for key in doomed:
+            del self._store.data[key]
+        if doomed:
+            self._dirty = True
+        return len(doomed)
 
     def save_if_dirty(self) -> None:
         """Persist recorded answers (atomically); a clean cache writes

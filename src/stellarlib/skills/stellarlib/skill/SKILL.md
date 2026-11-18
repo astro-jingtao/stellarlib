@@ -85,9 +85,31 @@ stellarlib.verify_database("my-db", workers=8)
 Re-checks every recorded part against size + sha256, backfills records
 for present files whose manifest write was lost, learns
 `signature_cache.json` (unchanged files then cost one stat), and never
-fetches. After migrating a database to another machine, delete
-`signature_cache.json` and verify once (mtime-preserving copies do not
-verify content in transit).
+fetches. After migrating a database to another machine, invalidate the
+migrated portion (the merge below does this) or delete
+`signature_cache.json` for a whole-database move, then verify once
+(mtime-preserving copies do not verify content in transit).
+
+### Move a database between machines (export → transport → merge)
+
+```python
+stellarlib.export_database("db-a", select=["stelib/library/all"])   # plan under db-a/export/selection/
+stellarlib.run_rsync("db-a", "db-a/export/selection", "host:/path/db-b/")   # or any byte copy
+r = stellarlib.merge_database("db-b-landed-copy", "db-b")           # adds what is missing
+print(r.summary())                                                  # merged / completed / kept / conflicts
+```
+
+- Any subset of product directories is itself a legal database for the
+  merge; conflicts (both sides hold a part, shas disagree) are
+  recorded, never resolved.
+- Default no-verify merge: fast copy; exactly the migrated files'
+  cache entries are invalidated, so `verify_database` re-hashes the
+  migrated portion once — run it to establish local evidence.
+- `merge_database(..., verify=True)`: hashes every copied part against
+  the source's recorded sha256 during the merge (a mismatch aborts
+  loudly) and seeds the cache with the verified answers.
+- `verify_transfer(db, plan)` checks a landed copy against its
+  transfer.json before merging.
 
 ### Register files you already hold
 

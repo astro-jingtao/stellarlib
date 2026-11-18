@@ -162,6 +162,22 @@ stellarlib.register_local_product("my-db", "tlusty", "ostar_g",
 grid = db.grid("tlusty/OSTAR2002", label="ostar_g")
 ```
 
+Move a database (or any subset of it) between machines: export a
+selection on one side, transport it (rsync or any byte copy — the plan
+travels with the database), and merge it into the other side. The merge
+only adds what is missing and records conflicts instead of resolving
+them; the default no-verify merge invalidates exactly the migrated
+files' signature-cache entries, so the next `verify_database` re-hashes
+the migrated portion once — never the whole database:
+
+```python
+stellarlib.export_database("db-on-a", select=["stelib/library/all"])
+stellarlib.run_rsync("db-on-a", "db-on-a/export/selection", "host:/path/db-on-b")
+r = stellarlib.merge_database("db-on-b-partial-copy", "db-on-b")
+print(r.summary())          # merged / completed / kept / conflicts
+stellarlib.verify_database("db-on-b", select=["stelib/library/all"])  # forced re-hash of the migrated portion
+```
+
 ## Documentation
 
 - `docs/architecture.md` — the two-layer data model, interpolation policy,

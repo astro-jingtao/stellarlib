@@ -817,6 +817,15 @@ def register_local_product(
         recognized = lambda p: recognize_miles(p) or miles_params_name.match(p.name) is not None
         collection = "library"
         release = "2011"
+    elif family == "stelib":
+        from stellarlib.models.stelib.reader import TABLE_NAME, recognize_stelib_fits
+
+        _tree_top = (TABLE_NAME, "ReadMe", "stelib.ps.gz")
+        recognized = (
+            lambda p: recognize_stelib_fits(p) or p.name in _tree_top
+        )
+        collection = "library"
+        release = "2003"
     else:
         raise ValueError(f"unknown family {family!r}")
 

@@ -28,5 +28,9 @@ nonconforming) into a two-state product report (complete / incomplete);
 the **Builder** fetches missing parts through the family adapter and
 never touches nonconforming ones; the **Verifier** (``verify_database``)
 re-checks recorded evidence in place and backfills records for
-present-but-unrecorded parts, never fetching.
+present-but-unrecorded parts, never fetching; the **Transfer**
+(``database/transfer/``) moves products between databases — export a
+plan, transport the bytes, merge into the target, with the signature
+cache invalidated for exactly the migrated portion so the next verify
+re-hashes it once.
 """

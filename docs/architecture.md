@@ -152,13 +152,18 @@ flowchart LR
     subgraph ADAPT["family adapters"]
         BA["bosz: directory mirrors<br/>(official bulkdl manifests<br/>+ per-file MAST fetch)"]
         TA["tlusty: whole vispec tars<br/>(20 verified archives)"]
+        MA["miles / stelib: whole official<br/>packages (tarball; catalog tree)"]
     end
     REG["register_local_product<br/>copy or by-reference"]
     SCAN --> BUILD --> INV
     BA --> SCAN
     TA --> SCAN
+    MA --> SCAN
     REG --> SCAN
-    NET["MAST / tlusty.oca.eu (HTTP)"] --> BUILD
+    NET["upstream channels (HTTP)"] --> BUILD
+    TR["transfer/ (export → transport → merge)<br/>adds only what is missing;<br/>invalidates the migrated portion's cache"]
+    SCAN --> TR
+    TR --> INV
 ```
 
 The database follows the unified management architecture: a **Product**
@@ -172,7 +177,16 @@ fetches only what is missing and never completes a product that holds
 nonconforming parts (a checksum proves integrity, not design
 membership). A fetch pass may run with bounded parallelism
 (`build_database(workers=N)`) — a speed axis only: per-part atomicity,
-manifest recording, and resume semantics are identical. A build run may restrict itself to whole products with
+manifest recording, and resume semantics are identical. The **Transfer** (`database/transfer/`) moves products between
+databases: `export_database` writes the plan, and `merge_database`
+imports a source database — or any partial copy of one — adding only
+what is missing (whole products as staged atomic copies, missing parts
+into existing ones), recording conflicts for a human, and regenerating
+the derived artifacts. The default no-verify merge invalidates exactly
+the migrated files' signature-cache entries, so the next verify
+re-hashes the migrated portion once — the scoped form of the
+whole-database delete-and-reverify rule. A build run may restrict
+itself to whole products with
 `select=` (glob patterns over product paths) — a fetch-round concern
 that never edits the blueprint. An upstream 404 is recorded as a failed fetch attempt
 (status, url, time in the MANIFEST) — the part stays missing, shows in
