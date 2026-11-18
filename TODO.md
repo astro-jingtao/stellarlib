@@ -3,6 +3,15 @@
 Design and feature work deliberately not yet done. Every item names the
 gap and the constraint any solution must respect; none of these are bugs.
 
+## BOSZ rorig storage and fetch rounds — indefinitely deferred
+
+- The remaining rorig storage decision (~10.7 TB against ~9.4 TB free)
+  and the r5000–r50000 fetch rounds are deferred indefinitely by user
+  decision (2026-11-18) and stay parked until the user reopens them.
+  Nothing here blocks the read-side design below, and the database
+  transfer channel (`export_database`/`merge_database`) already supports
+  the mirror-elsewhere-then-merge route if a future round takes it.
+
 ## noresam (rorig) read side — design pending
 
 - The blueprint mirrors the BOSZ `rorig` directories — all 14 products,
