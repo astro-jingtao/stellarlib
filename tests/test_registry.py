@@ -36,7 +36,7 @@ class TestRegistryData:
     def test_loads_and_lists_backends_and_products(self):
         reg = load_registry()
         assert reg["schema_version"] == 1
-        assert set(backend_names()) == {"bosz", "tlusty", "miles"}
+        assert set(backend_names()) == {"bosz", "tlusty", "miles", "stelib"}
         assert product_names("bosz") == ("resampled_spectra",)
         assert set(product_names("tlusty")) == {"ostar2002", "bstar2006"}
         assert product_names("miles") == ("library",)

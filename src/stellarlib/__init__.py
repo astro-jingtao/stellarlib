@@ -20,6 +20,7 @@ from stellarlib.exceptions import StellarLibError
 from stellarlib.facade import (
     BoszSpectra,
     MilesSpectra,
+    StelibSpectra,
     TlustySpectra,
     UnifiedSpectra,
     construct,
@@ -71,6 +72,7 @@ __all__ = [
     "BoszSpectra",
     "TlustySpectra",
     "MilesSpectra",
+    "StelibSpectra",
     "build_database",
     "verify_database",
     "VerifyReport",

@@ -1,0 +1,93 @@
+{
+ "schema_version": 1,
+ "family": "stelib",
+ "description": "The STELIB empirical stellar library's own characteristics and its mapping into the stellarlib unified vocabulary (definitions in registry/unified_parameters.json). Loaded and validated together with the definitions by stellarlib.registry.",
+ "mapping_version": "1",
+ "notes": [
+  "One FITS file per spectrum, 1-D 6700-pixel float32 image with BUNIT 'erg /s /cm2 /angstroms': the library is absolute spectrophotometry at the observer (the paper states a 3% overall photometric uncertainty). The served library is cor_sp/ — the interstellar-extinction and radial-velocity corrected set the paper publishes; the obs_sp/ raw counterparts are held and mirrored, never served as library members.",
+  "Every star sits on its own wavelength grid: the per-file linear-WCS (CRVAL1, CDELT1) pairs differ across the whole tree (live-measured 2026-11-18), so the axis is computed per file from its own header and no shared grid is assumed anywhere. The pixel domain runs ~3196-9898 A while the paper cites 3200-9500 A — both statements are the upstream's own and both are recorded.",
+  "observed_flux_density carries the absolutely-calibrated observed F_lambda; eddington_flux/surface_flux are deliberately not mapped — a model atmosphere flux label on a spectrum of a star at Earth would be a false claim (the air/vacuum convention of the wavelength axis is likewise not stated by the source and stays unset).",
+  "No interpolation is offered: the stars are an observed scatter in (Teff, log g, [Fe/H]) and each sits on its own grid, so a weighted mix of two stars' spectra is neither an observation of anything nor defined on a common sampling. Queries are nearest-star (voronoi semantics: warned, recorded).",
+  "The star table is fixed-width ASCII with the layout its ReadMe documents byte by byte; '-' marks a value it does not report. 48 of 255 stars miss at least one of Teff/log g/[Fe/H] (32 miss Teff, 44 miss log g, 44 miss [Fe/H]; 207 are fully parameterized): their files are held and mirrored like every other part, but they carry no query coordinates and are listed by star name in the set's notes — never silently dropped. One row (LHS 235) lists no corrected spectrum at all; it exists in the table and its observed counterpart is mirrored."
+ ],
+ "products": {
+  "library": {
+   "field_mappings": [
+    {
+     "unified": "wavelength",
+     "native": "wavelength",
+     "origin": "native",
+     "description": "the star's own linear WCS axis (CRVAL1 + CDELT1 * (pixel - CRPIX1)); per-star grids, never assumed shared"
+    },
+    {
+     "unified": "wavelength_um",
+     "native": "wavelength",
+     "origin": "transformed_native",
+     "transformation": "x * 1e-4"
+    },
+    {
+     "unified": "observed_flux",
+     "native": null,
+     "origin": "missing",
+     "description": "not mapped: STELIB fluxes are absolutely calibrated (BUNIT erg/s/cm^2/Angstrom), not the unitless relative flux this field names"
+    },
+    {
+     "unified": "observed_flux_density",
+     "native": "flux",
+     "origin": "native",
+     "description": "the star's observed flux density at the observer as published (absolute spectrophotometry, 3% overall uncertainty; cor_sp: extinction- and RV-corrected)"
+    },
+    {
+     "unified": "eddington_flux",
+     "native": null,
+     "origin": "missing",
+     "description": "not mapped: an empirical observed spectrum has no model Eddington-flux meaning"
+    },
+    {
+     "unified": "surface_flux",
+     "native": null,
+     "origin": "missing",
+     "description": "not mapped: an empirical observed spectrum has no model surface-flux meaning"
+    },
+    {
+     "unified": "continuum",
+     "native": null,
+     "origin": "missing",
+     "description": "no continuum column is published"
+    }
+   ],
+   "parameters": [
+    {
+     "name": "teff",
+     "role": "axis",
+     "values_from": "teff",
+     "source": "native"
+    },
+    {
+     "name": "log_surface_gravity",
+     "role": "axis",
+     "values_from": "logg",
+     "source": "native"
+    },
+    {
+     "name": "m_h",
+     "role": "axis",
+     "values_from": "m_h",
+     "source": "native"
+    },
+    {
+     "name": "spectral_resolution",
+     "role": "implicit",
+     "status": "~3 A FWHM (the paper's '<~3 A' resolution statement; 1 A sampling); not a selectable product axis",
+     "source": "official_documentation"
+    }
+   ]
+  }
+ },
+ "references": [
+  {
+   "citation": "Le Borgne, J.-F., et al. 2003, A&A 402, 433 (the STELIB library)",
+   "bibcode": "2003A&A...402..433L"
+  }
+ ]
+}

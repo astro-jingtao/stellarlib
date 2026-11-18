@@ -17,10 +17,11 @@ from stellarlib.models.bosz.backend import read_bosz
 from stellarlib.models.bosz.reader import recognize_bosz
 from stellarlib.models.miles.backend import read_miles
 from stellarlib.models.miles.reader import recognize_miles
+from stellarlib.models.stelib.backend import read_stelib, recognize_stelib
 from stellarlib.models.tlusty.backend import read_tlusty
 from stellarlib.models.tlusty.reader import recognize_tlusty
 
-__all__ = ["BACKENDS", "get_backend", "register_backend", "catalog", "parse_model_spec"]
+__all__ = ["BACKENDS", "catalog", "get_backend", "parse_model_spec", "register_backend"]
 
 
 class Backend:
@@ -36,6 +37,7 @@ BACKENDS: dict[str, Backend] = {
     "bosz": Backend(name="bosz", recognize=recognize_bosz, read=read_bosz),
     "tlusty": Backend(name="tlusty", recognize=recognize_tlusty, read=read_tlusty),
     "miles": Backend(name="miles", recognize=recognize_miles, read=read_miles),
+    "stelib": Backend(name="stelib", recognize=recognize_stelib, read=read_stelib),
 }
 
 

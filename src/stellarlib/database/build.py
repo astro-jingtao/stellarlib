@@ -127,6 +127,8 @@ def _release_of(family: str, collection: str) -> str:
         return "2024"
     if family == "miles":
         return "2011"
+    if family == "stelib":
+        return "2003"
     return collection
 
 
@@ -135,6 +137,7 @@ def _format_of(family: str) -> str:
         "bosz": "bosz_resam",
         "tlusty": "tlusty_vis",
         "miles": "miles_fits",
+        "stelib": "stelib_fits",
     }[family]
 
 

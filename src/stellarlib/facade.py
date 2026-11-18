@@ -36,6 +36,7 @@ __all__ = [
     "BoszSpectra",
     "TlustySpectra",
     "MilesSpectra",
+    "StelibSpectra",
     "construct",
 ]
 
@@ -561,6 +562,66 @@ class MilesSpectra(UnifiedSpectra):
         return cls(grid.sets)
 
 
+class StelibSpectra(UnifiedSpectra):
+    """STELIB empirical stellar spectra under the unified interface.
+
+    An empirical library is an observed scatter, not a model grid — and
+    every star sits on its own wavelength grid — so a weighted mix of
+    two stars' spectra is neither an observation of anything nor
+    defined on a common sampling. Point queries are therefore
+    nearest-star only — the default ``interp="voronoi"`` returns the
+    nearest parameterized star, warned and recorded;
+    ``interp="multilinear"`` is refused outright.
+    """
+
+    model_name = "stelib"
+
+    def spectrum(
+        self,
+        interp: str = "voronoi",
+        range_policy: str = "strict",
+        **coordinates,
+    ) -> Spectrum:
+        if interp == "multilinear":
+            raise ValueError(
+                "interp='multilinear' is not defined for STELIB: the stars "
+                "are an empirical scatter, each on its own wavelength "
+                "grid — a weighted mix is neither an observation of "
+                "anything nor defined on a common sampling; use "
+                "interp='voronoi' (the nearest parameterized star)"
+            )
+        return super().spectrum(
+            interp=interp, range_policy=range_policy, **coordinates
+        )
+
+    @classmethod
+    def construct(
+        cls,
+        paths=None,
+        table_path=None,
+        database=None,
+        label=None,
+    ) -> "StelibSpectra":
+        """Load STELIB spectra from the catalog tree (or its cor_sp
+        subdirectory), a file list (``table_path=`` pins the star table;
+        it is discovered among the sources when omitted), or from a
+        database built with ``stellarlib.build_database`` (the library
+        is one product; ``label`` is accepted for uniformity and is
+        always ``"all"``)."""
+        if database is not None:
+            return cls(_database_grid("stelib/2003", database, label).sets)
+        if paths is None:
+            raise ValueError(
+                "construct('stelib/2003') requires paths= of the catalog "
+                "tree or spectrum files, or database= of a built database"
+            )
+        options = {} if table_path is None else {"table_path": table_path}
+        grid = SpectrumGrid.from_paths(
+            "stelib", _as_path_list(paths), **options
+        )
+        return cls(grid.sets)
+
+
 def _database_grid(
     model: str, database, label, collection=None, **selection
 ) -> SpectrumGrid:
@@ -594,7 +655,12 @@ def _as_path_list(paths) -> list:
     return list(paths)
 
 
-_REGISTRY = {"bosz": BoszSpectra, "tlusty": TlustySpectra, "miles": MilesSpectra}
+_REGISTRY = {
+    "bosz": BoszSpectra,
+    "tlusty": TlustySpectra,
+    "miles": MilesSpectra,
+    "stelib": StelibSpectra,
+}
 
 
 def construct(

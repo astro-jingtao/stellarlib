@@ -1,6 +1,6 @@
 ---
 name: stellarlib
-description: Use the installed stellarlib Python package to read, mirror, verify, and query published stellar spectral libraries — BOSZ 2024 and TLUSTY OSTAR2002/BSTAR2006 model grids plus the MILES empirical library. Use when a task names stellarlib or asks to build or verify a stellar-spectra database (build_database, verify_database, register_local_product), to open a grid (open_grid, construct, db.grid), to query a spectrum (multilinear or voronoi nearest node; MILES nearest star), to read unified fields (surface_flux, eddington_flux, observed_flux), to resample wavelengths, or to materialize a grid — or when an error such as GridHoleError, UnsafeInterpolationError, or WavelengthGridError appears in stellarlib output.
+description: Use the installed stellarlib Python package to read, mirror, verify, and query published stellar spectral libraries — BOSZ 2024 and TLUSTY OSTAR2002/BSTAR2006 model grids plus the MILES and STELIB empirical libraries. Use when a task names stellarlib or asks to build or verify a stellar-spectra database (build_database, verify_database, register_local_product), to open a grid (open_grid, construct, db.grid), to query a spectrum (multilinear or voronoi nearest node; MILES/STELIB nearest star), to read unified fields (surface_flux, eddington_flux, observed_flux, observed_flux_density), to resample wavelengths, or to materialize a grid — or when an error such as GridHoleError, UnsafeInterpolationError, or WavelengthGridError appears in stellarlib output.
 ---
 
 # stellarlib usage
@@ -20,6 +20,7 @@ and never transforms the published data.
 | `bosz/2024` | model grid (8 broadenings × 14 metallicities) | `surface_flux` (F_λ = 4πH_λ) or `eddington_flux` | multilinear (default), voronoi on holed cells |
 | `tlusty/OSTAR2002`, `tlusty/BSTAR2006` | model grid (per-composition tars) | `surface_flux` or `eddington_flux` | multilinear (default), voronoi |
 | `miles/2011` | empirical library (985 observed stars) | `observed_flux` (relative, unitless) | nearest star only |
+| `stelib/2003` | empirical library (255 observed stars, VizieR III/232) | `observed_flux_density` (erg/(s cm² Å), absolute) | nearest star only |
 
 Read `references/families.md` for each family's coverage, flux
 convention, and pitfalls — before answering any question about what a
@@ -41,8 +42,10 @@ flux = spec.unified["observed_flux"]        # relative, per-star normalization
   (`selection_info["method"] == "exact-node"`).
 - `interp="voronoi"` returns the nearest node/star — a warning fires and
   `last_record` names the node; this is the hole-tolerant path for
-  BOSZ/TLUSTY and the ONLY path for MILES (multilinear is refused
-  there: mixing arbitrary per-star normalizations is meaningless).
+  BOSZ/TLUSTY and the ONLY path for the empirical libraries MILES and
+  STELIB (multilinear is refused there: mixing two observed stars is
+  not an observation of anything, and STELIB stars sit on per-star
+  wavelength grids).
 - `range_policy="strict"` (default) refuses out-of-range coordinates;
   `"clamp"` clamps with a warning.
 

@@ -1,0 +1,103 @@
+III/232        STELIB: A library of stellar spectra at R~2000 (Le Borgne+, 2003)
+================================================================================
+STELIB: A library of stellar spectra at R~2000.
+    Le Borgne J.-F., Bruzual G., Pello R., Lancon A., Rocca-Volmerange B.,
+    Sanahuja B., Schaerer D., Soubiran C., Vilchez-Gomez R.
+   <Astron. Astrophys. 402, 433 (2003)>
+   =2003A&A...402..433L
+================================================================================
+ADC_Keywords: Atlases ; Spectroscopy
+Keywords: atlases - stars: fundamental parameters - galaxies: stellar content
+
+Description:
+    STELIB is a new spectroscopic stellar library, available at
+    http://webast.ast.obs-mip.fr/stelib . It consists in an homogeneous
+    library of stellar spectra in the visible range (3200 to 9500){AA}),
+    with an intermediate spectral resolution (<~3{AA}) and sampling
+    (1{AA}), and corrected from interstellar absorption. This library
+    includes 255 stars of various spectral types and luminosity classes,
+    spanning a relatively wide range in metallicity. The spectral
+    resolution, wavelength and spectral type coverage of this library
+    represents a substantial improvement over previous libraries used in
+    population synthesis models. The overall absolute photometric
+    uncertainty is 3%.
+
+    The data were obtained during two runs, one at the 1m Jacobus Kaptein
+    Telescope (JKT), Roque de los Muchachos Observatory, La Palma, Canary
+    Islands, Spain, between 1994 March 28 and April 4, and a second one at
+    the 2.3m of the Australian National University at Siding Spring (SSO),
+    Australia, between 1994 December 25 and 31.
+
+File Summary:
+--------------------------------------------------------------------------------
+ FileName   Lrecl  Records   Explanations
+--------------------------------------------------------------------------------
+ReadMe         80        .   This file
+table.dat     208      255   Star list sorted by equatorial coordinates
+                             and access to individual spectra
+obs_sp/*       .       258   Observed individual spectra
+cor_sp/*       .       255   Individual spectra, corrected for interstellar
+                             extinction and radial velocity
+stelib.ps     132   241060   PostScript file of observed spectra
+--------------------------------------------------------------------------------
+
+See also:
+   http://webast.ast.obs-mip.fr/stelib : STELIB homepage
+         III/88 : Stellar Spectrophotometric Atlas (Gunn+ 1983)
+         VI/78  : Theoretical Stellar Flux Spectra for F- to K-type Stars
+                                                                   (Buser+ 1992)
+ J/A+AS/98/523  : Grids of stellar models. II. (Schaerer+ 1993)
+ J/A+AS/124/1   : The Centaurus Cluster Catalogue (Jerjen+ 1997)
+ J/A+AS/125/229 : A standard stellar library (Lejeune+ 1997)
+ J/A+AS/130/65  : A standard stellar library. II. (Lejeune+ 1998)
+ J/PASP/110/863 : A Stellar Spectral Flux Library: 1150-25000{AA} (Pickles 1998)
+
+Observing runs:
+--------------------------------------------------------------------------
+  date            observatory           telescope         observers
+--------------------------------------------------------------------------
+ 28/03/1994 -     Roque de los           Jacobus Kaptein   R. Pello, J.F Le
+ 04/04/1994       Muchachos, La Palma,   Telescope, 1m     Borgne, R.
+                  Canary Islands, Spain                    Vilchez
+
+ 25/12/1994 -     Mount Stromblo and     2.3m at Mount
+ 01/01/1995       Siding Spring,         Stromblo          A. Lancon
+                  Australia
+--------------------------------------------------------------------------
+
+Byte-by-byte Description of file: table.dat
+--------------------------------------------------------------------------------
+   Bytes Format Units   Label     Explanations
+--------------------------------------------------------------------------------
+   1- 10  A10   ---     Star      Star name
+  12- 13  I2    h       RAh       Right ascension (J2000.0)
+  15- 16  I2    min     RAm       Right ascension (J2000.0)
+  18- 22  F5.2  s       RAs       Right ascension (J2000.0)
+      24  A1    ---     DE-       Declination sign (J2000.0)
+  25- 26  I2    deg     DEd       Declination (J2000.0)
+  28- 29  I2    arcmin  DEm       Declination (J2000.0)
+  31- 34  F4.1  arcsec  DEs       Declination (J2000.0)
+  36- 45  A10   ---     SpType    MK Spectral type
+  48- 52  I5    K       Teff      ? Effective temperature
+  54- 57  F4.2  [cm/s2] log(g)    ? Gravity surface
+  59- 63  F5.2  [Sun]   [Fe/H]    ? Metallicity
+  65- 70  F6.3  mag     VMAG      ? Absolute visual magnitude
+  72- 75  F4.2  mag   E_VMAG      ? Error on absolute magnitude (upper limit)
+  79- 82  F4.2  mag   e_VMAG      ? Error on absolute magnitude (lower limit)
+  85- 88  F4.2  mag     Av        ? Absorption
+  90-118  A29   ---     OName     Other identifications
+ 120-122  A3    ---     Add       [Add ] Indicates additional stars not
+                                         presented in the paper
+ 124-143  A20   ---     cSpFile1  Spectrum file in "cor_sp" subdirectory (1)
+ 145-165  A21   ---     oSpFile1  Spectrum file in "obs_sp" subdirectory (2)
+ 167-186  A20   ---     cSpFile2  Spectrum file in "cor_sp" subdirectory (1)
+ 188-208  A21   ---     oSpFile2  Spectrum file in "obs_sp" subdirectory (2)
+--------------------------------------------------------------------------------
+Note (1): Spectra corrected for interstellar extinction and radial velocity.
+    The fluxes in the FITS files are expressed in 10mW/m2/nm (erg/cm2/s/{AA})
+Note (2): fluxes expressed in 10mW/m2/nm (erg/cm2/s/{AA})
+--------------------------------------------------------------------------------
+
+History: Copied at http://webast.ast.obs-mip.fr/stelib
+================================================================================
+(End)                                        Patricia Bauer [CDS]    22-Apr-2003

@@ -107,12 +107,14 @@ Flux interpolation runs in the linear space the libraries publish
 (including the upstream-clipped exact-zero rows); quirks are recorded in
 the registry notes, never patched in code.
 
-### Empirical libraries: the scatter paradigm (MILES)
+### Empirical libraries: the scatter paradigm (MILES, STELIB)
 
 An empirical library is not a model grid: its stars are observed points
-scattered through (Teff, log g, [M/H]) — 985 of them at MILES, 946
-carrying complete parameters — and each spectrum's flux is relative with
-an arbitrary per-star normalization. Both facts change the query
+scattered through (Teff, log g, [M/H]) — 985 of them at MILES (946
+carrying complete parameters), 255 at STELIB (207 complete) — and each
+spectrum's flux is what the library published: relative at MILES
+(arbitrary per-star normalization), absolute spectrophotometry at
+STELIB (`observed_flux_density`, erg/(s cm² Å)). Both facts change the query
 contract, not the container: the product is still one whole official
 package (the FITS tarball + the parameter table + the page snapshot),
 still mirrored verbatim, still a `SpectrumSet` of lazy `GridNode`s —
@@ -127,9 +129,15 @@ the s-number), and `axes`/`holes` describe the scatter's own value sets.
   (nearest star) is the default and only query path, warned and recorded
   like everywhere else; `multilinear` raises.
 - Stars whose table row lacks any query parameter (39 MILES stars
-  report no [Fe/H]) remain held, mirrored, and verified data — they
-  carry no query coordinates and are recorded by s-number and name in
-  the set's notes, never silently dropped.
+  report no [Fe/H]; 48 STELIB stars miss at least one of the three)
+  remain held, mirrored, and verified data — they carry no query
+  coordinates and are recorded by name in the set's notes, never
+  silently dropped. STELIB adds two boundary cases handled the same
+  honest way: a star with two corrected spectra (HD 053929) is one
+  scatter point — the table's own file order picks the served file,
+  the second stays held data recorded in the notes — and a table-only
+  row with no spectrum files at all (LHS 235) stays in the table and
+  the notes.
 
 ## The local database
 

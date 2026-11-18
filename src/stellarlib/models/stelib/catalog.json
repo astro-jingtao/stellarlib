@@ -1,0 +1,48 @@
+{
+ "schema_version": 1,
+ "family": "stelib",
+ "release": "2003",
+ "description": "The STELIB empirical stellar library: 255 stars observed 3200-9500 A (cited window) at ~3 A FWHM, 1 A sampling, absolute spectrophotometry (3% overall uncertainty), published as the VizieR catalog III/232 (Le Borgne et al. 2003). One stellarlib product mirrors the whole catalog tree: ReadMe, the star table table.dat, the corrected spectra cor_sp/ (interstellar-extinction and radial-velocity corrected — the published library), their raw counterparts obs_sp/, and the published atlas stelib.ps.gz.",
+ "base_url": "https://cdsarc.cds.unistra.fr/ftp/III/232",
+ "landing_page_url": "https://cdsarc.u-strasbg.fr/viz-bin/VizieR?-source=III/232",
+ "license": "no license statement in the catalog tree (2026-11-18); research use with the reference cited",
+ "url_templates": {
+  "cds": "https://cdsarc.cds.unistra.fr/ftp/III/232/{file}",
+  "adac": "http://vizier.nao.ac.jp/ftp/cats/III/232/{file}"
+ },
+ "channel_notes": "CDS is the canonical source; the NAOJ ADAC mirror (vizier.nao.ac.jp) serves the identical native tree over plain HTTP. The blueprint entry picks the channel explicitly (source=\"cds\" (default) | \"adac\"); there is no fallback between channels, and each part's manifest entry records the URL it was actually fetched from.",
+ "verified": {
+  "date": "2026-11-18",
+  "channel": "adac",
+  "tree": {
+   "readme": true,
+   "table_dat": {"url_ok": true, "size_bytes": 47771, "rows": 255},
+   "stelib_ps_gz": {"url_ok": true, "size_bytes": 4349438},
+   "cor_sp": "255 FITS files, exactly the table's cSpFile1/cSpFile2 names (254 rows list a cSpFile1, one row lists a cSpFile2 second spectrum, one row — LHS 235 — lists none)",
+   "obs_sp": "258 FITS files, exactly the table's oSpFile1/oSpFile2 names (254 + 4, no duplicates, no strays)"
+  },
+  "fits_format": "every file sampled (all 255 cor, all 258 obs): NAXIS=1, NAXIS1=6700, BITPIX=-32, BUNIT 'erg /s /cm2 /angstroms', linear WCS CTYPE1='LINEAR' with per-star CRVAL1 (~3196-3200) and CDELT1 (~0.999) — every star sits on its own grid",
+  "stars": {
+   "rows": 255,
+   "fully_parameterized_teff_logg_feh": 207,
+   "missing_teff": 32,
+   "missing_logg": 44,
+   "missing_feh": 44
+  },
+  "cds_channel": "not verified from the 2026-11-18 build site: its egress cannot reach cdsarc.cds.unistra.fr at all (proxy CONNECT timeout, 7th recurrence); the https url template is the documented form of the ftp tree — verify from a machine with direct CDS access before relying on it",
+  "checksum_published": false
+ },
+ "format_notes": [
+  "one FITS per spectrum: 1-D image (NAXIS=1, 6700 float32 pixels), BUNIT 'erg /s /cm2 /angstroms'; the wavelength axis is the header's own linear WCS (CRPIX1=1, per-star CRVAL1/CDELT1), pixel domain ~3196-9898 A while the paper cites 3200-9500 A — both are the upstream's own statements, recorded, never adjusted",
+  "cor_sp files end _V<version>.fits (V3.2 across the tree) and carry ISEXTINC (applied Av), RADVEL, and a HISTORY card stating the extinction correction; obs_sp files end _moy.fits (per-run mean) and are the raw counterparts — held and mirrored, not the served library",
+  "table.dat is fixed-width ASCII with the layout the ReadMe documents byte by byte (star 1-10, Teff 48-52, log g 54-57, [Fe/H] 59-63, cSpFile1 124-143, oSpFile1 145-165, cSpFile2 167-186, oSpFile2 188-208); '-' marks a value the table does not report; lines run 186-208 bytes (trailing empty columns are simply absent)",
+  "the FITS headers carry EQUINOX B1950.0 while the table's coordinates are documented J2000.0, and card APNUM1 is non-standard (astropy warns) — quirks of the published files, preserved verbatim and recorded, never fixed",
+  "the ReadMe states the fluxes in 10mW/m2/nm (erg/cm2/s/A): the library is absolute spectrophotometry at the observer, not a model surface flux — mapped to observed_flux_density, never onto eddington_flux/surface_flux"
+ ],
+ "references": [
+  {
+   "citation": "Le Borgne, J.-F., et al. 2003, A&A 402, 433 (the STELIB library)",
+   "bibcode": "2003A&A...402..433L"
+  }
+ ]
+}

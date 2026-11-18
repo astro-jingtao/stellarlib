@@ -45,7 +45,7 @@ class PartDesign:
 
     name: str
     url: str | None = None
-    role: str = "spectrum"  # "spectrum" | "lineid" | "bulk_manifest" | "directory_index" | "wavelength_grid" | "archive" | "parameters" | "provenance_snapshot"
+    role: str = "spectrum"  # "spectrum" | "lineid" | "bulk_manifest" | "directory_index" | "wavelength_grid" | "archive" | "parameters" | "provenance_snapshot" | "atlas"
 
 
 @dataclasses.dataclass(frozen=True)

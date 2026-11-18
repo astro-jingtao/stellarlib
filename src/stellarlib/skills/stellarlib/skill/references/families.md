@@ -63,10 +63,37 @@ facts stellarlib records in its registries; the package's
   946 stars carry all three; 39 report no [Fe/H] (listed in the set's
   `notes["stars_without_parameters"]`, not queryable).
 
+## STELIB (`stelib/2003`)
+
+- Source: VizieR catalog III/232 (Le Borgne et al. 2003) — 255 OBSERVED
+  stars, 3200-9500 A cited coverage at ~3 A FWHM, 1 A sampling. Product
+  = the whole catalog tree (ReadMe + table.dat + the corrected spectra
+  cor_sp/ + their raw counterparts obs_sp/ + the published atlas); the
+  blueprint channel is explicit: `dict(family="stelib")` fetches CDS
+  (canonical), `dict(family="stelib", source="adac")` the verified NAOJ
+  mirror — no fallback between channels.
+- Coverage: pixel domain ~3196-9898 A per star (the paper cites
+  3200-9500 A; both recorded).
+- Flux: ABSOLUTE spectrophotometry at the observer
+  (`observed_flux_density`, erg/(s cm^2/A) — BUNIT is in every file;
+  3% overall photometric uncertainty; the served cor_sp set has the
+  interstellar-extinction and radial-velocity corrections applied).
+  Never map it onto `eddington_flux`/`surface_flux`, and never
+  interpolate between stars (`multilinear` refused; `voronoi` nearest
+  star is the default and only query — the stars also sit on per-star
+  wavelength grids, so there is no common sampling to mix on).
+- Coordinates: (Teff, log g, [Fe/H]) scatter from table.dat; 207 of
+  255 stars carry all three (the rest are listed in
+  `notes["stars_without_parameters"]`, not queryable). HD 053929's two
+  corrected spectra are one scatter point (cSpFile1 serves; the second
+  is recorded in `notes["second_corrected_spectra"]`).
+
 ## Choosing a family by parameters
 
 - Teff ≲ 3750 K or empirical stars wanted → MILES (nearest star; check
   the returned star's parameters in `selection_info`).
+- Absolute optical spectrophotometry of an observed star wanted (or the
+  3200-3500 / 7500-9500 A wings beyond MILES) → STELIB (nearest star).
 - 15000–55000 K, NLTE hot stars → TLUSTY.
 - Wide coverage 3500–31,970 Å at fixed resolution, theory → BOSZ
   (pick the broadening matching your resolution; r500 ≈ R≈500).

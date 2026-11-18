@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+- The STELIB empirical stellar library (255 observed stars, VizieR
+  catalog III/232) joins as the family `stelib/2003` — the second
+  empirical library, under the same scatter paradigm: the product
+  mirrors the whole catalog tree (ReadMe, the star table, the 255
+  corrected spectra `cor_sp/` that are the published library, their 258
+  raw counterparts `obs_sp/`, and the published atlas; no subsets), and
+  the star table acts as the upstream's own bulk manifest — the design
+  expands from it once held (the BOSZ bulkdl pattern). The channel is
+  an explicit blueprint choice: `source="cds"` (canonical, default) or
+  `source="adac"` (the NAOJ mirror the whole tree was fetched and
+  verified through on 2026-11-18); no fallback between channels, and
+  every part's manifest entry records the URL it came from. The flux is
+  absolute spectrophotometry (BUNIT erg/s/cm^2/Angstrom in every file;
+  3% overall photometric uncertainty; cor_sp carries the
+  interstellar-extinction and radial-velocity corrections) and maps to
+  the new unified field `observed_flux_density` — never onto
+  `eddington_flux`/`surface_flux`. Every star sits on its own
+  wavelength grid (per-file linear WCS), so queries are nearest-star
+  only (`StelibSpectra` defaults to `voronoi`, `multilinear` refused).
+  The 48 stars without all three parameters stay held and mirrored but
+  carry no query coordinates (recorded in the set's notes); HD 053929's
+  second corrected spectrum is one recorded held file, not a second
+  node at the same coordinates.
 - The MILES empirical stellar library (985 observed stars,
   research.iac.es) joins as the family `miles/2011` — the first
   empirical library, under the scatter paradigm: the product mirrors the

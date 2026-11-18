@@ -21,6 +21,12 @@
       "description": "observed flux of an empirical library's star — relative, with an arbitrary per-star normalization (unitless); mapped only by empirical families and never onto or from the model flux fields"
     },
     {
+      "name": "observed_flux_density",
+      "unit": "erg/(s cm^2 Angstrom)",
+      "representation": "linear",
+      "description": "the observed energy flux density F_lambda at the observer as published — absolutely calibrated empirical spectrophotometry; mapped by empirical families whose calibration is absolute, and never onto or from the model flux fields"
+    },
+    {
       "name": "eddington_flux",
       "unit": "erg/(s cm^2 Angstrom)",
       "representation": "linear",

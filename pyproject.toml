@@ -52,6 +52,7 @@ where = ["src"]
 "stellarlib.models.bosz" = ["*.json"]
 "stellarlib.models.tlusty" = ["*.json"]
 "stellarlib.models.miles" = ["*.json"]
+"stellarlib.models.stelib" = ["*.json"]
 "stellarlib.skills" = [
     "SKILL-DEPLOY.md",
     "stellarlib/skill/*.md",

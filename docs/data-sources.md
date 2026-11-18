@@ -299,6 +299,76 @@ refused; `MilesSpectra`). Stars without complete parameters stay held
 and mirrored but carry no query coordinates — listed by s-number and
 name in the set's notes, never silently dropped.
 
+## STELIB (the second empirical library)
+
+Source: VizieR catalog III/232 — Le Borgne et al. 2003, A&A 402, 433:
+255 stars, 3200–9500 Å cited coverage at ~3 Å FWHM, 1 Å sampling,
+absolute spectrophotometry (the paper states a 3% overall photometric
+uncertainty), the spectra corrected for interstellar extinction and
+radial velocity. The stellarlib release label is `stelib/2003`.
+
+### Channel (verified live 2026-11-18)
+
+The publishing unit is the catalog's native tree (the original project
+site, webast.ast.obs-mip.fr, is gone). CDS is the canonical source; the
+NAOJ ADAC mirror (vizier.nao.ac.jp) serves the identical tree over
+plain HTTP at `/ftp/cats/III/232/`. The blueprint entry picks the
+channel explicitly — `{"family": "stelib", "source": "cds"}` (default)
+or `{"family": "stelib", "source": "adac"}` — and there is no fallback
+between channels; each fetched part's manifest entry records the URL it
+actually came from. The whole tree was fetched through ADAC on
+2026-11-18 (a day when the build site's egress could not reach cdsarc
+at all): `ReadMe`, `table.dat` (47,771 bytes, 255 rows), `stelib.ps.gz`
+(4,349,438 bytes), `cor_sp/` with 255 FITS, `obs_sp/` with 258 FITS —
+the CDS https URL template is the documented form of the ftp tree, not
+verified from that site. The stellarlib product `stelib/library/all`
+mirrors that whole tree; `table.dat` acts as the upstream's own bulk
+manifest (its spectrum-file columns name every member), so the design
+expands from it once held, exactly like a BOSZ bulkdl script. No
+checksum is published.
+
+### File format (verified against the fetched tree 2026-11-18)
+
+- One FITS per spectrum: 1-D image (NAXIS=1, NAXIS1=6700, BITPIX=-32),
+  BUNIT `erg /s /cm2 /angstroms` — every file of both subdirectories
+  sampled. Corrected spectra end `_V<version>.fits` (V3.2 throughout);
+  observed counterparts end `_moy.fits` ("moyenne", the per-run mean),
+  optionally with the run's tag (`HD53929_moy_sso.fits`, `_jkt`,
+  `LTT4364_moy_save.fits`).
+- Wavelength = the header's own linear WCS — and **every star sits on
+  its own grid**: the (CRVAL1, CDELT1) pairs differ per file
+  (~3196–3200 Å start, ~0.999 Å/pix), pixel domain ~3196–9898 Å while
+  the paper cites 3200–9500 Å; both are the upstream's statements,
+  recorded, never adjusted.
+- `table.dat` is fixed-width ASCII at the byte positions its ReadMe
+  documents (star 1–10, Teff 48–52, log g 54–57, [Fe/H] 59–63,
+  cSpFile1 124–143, oSpFile1 145–165, cSpFile2 167–186, oSpFile2
+  188–208); `-` marks a not-reported value; lines run 186–208 bytes
+  (trailing empty columns simply absent). The cor/obs membership closes
+  against the tree exactly: 254 non-empty cSpFile1 + 1 cSpFile2 = 255
+  `cor_sp` files; 254 + 4 = 258 `obs_sp` files.
+- 255 rows; 207 stars carry all three query parameters; 32 miss Teff,
+  44 miss log g, 44 miss [Fe/H]. One row (LHS 235) lists no spectrum
+  files at all — a table-only row the Add column marks. HD 053929
+  (14011 K, 3.63, +0.29) lists two corrected spectra (`lp` and `ss`,
+  the two observing runs): the table's own cSpFile1-before-cSpFile2
+  order picks the served file and the second stays held data, recorded
+  in the set's notes.
+
+### Flux semantics (absolute spectrophotometry)
+
+The ReadMe states the fluxes in 10 mW/m²/nm (erg/cm²/s/Å): this is
+**absolute spectrophotometry at the observer**, unlike MILES' unitless
+relative flux — stellarlib maps it to the dedicated unified field
+`observed_flux_density` (erg/(s cm² Å)) and still does not map
+`eddington_flux`/`surface_flux` (a model atmosphere flux label on a
+star's spectrum at Earth would be a false claim). The stars form an
+observed scatter, each on its own wavelength grid, so queries are
+nearest-star only (`interp="voronoi"` default, multilinear refused;
+`StelibSpectra`). The corrected set (`cor_sp/`) is the published
+library and what the reader serves; the raw `obs_sp/` counterparts are
+held and mirrored, never served as library members.
+
 ## Pitfall index (all recorded in the registry notes too)
 
 1. resam has no wavelength column — pairing is explicit; row mismatch
@@ -317,3 +387,8 @@ name in the set's notes, never silently dropped.
 7. MILES flux is relative with arbitrary per-star normalization — never
    interpolate between stars and never label it with a physical flux
    unit; the 39 `[Fe/H]`-missing stars are recorded, not queryable.
+8. STELIB stars sit on per-star wavelength grids (no shared sampling)
+   and its FITS state EQUINOX B1950.0 while the table's coordinates
+   are J2000.0 — never assume a common grid, and resample explicitly
+   (recorded) when combining; the 48 incompletely-parameterized stars
+   are recorded, not queryable.

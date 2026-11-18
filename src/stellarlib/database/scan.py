@@ -24,6 +24,7 @@ from stellarlib.database.design import (
 from stellarlib.database.signature_cache import SignatureCache
 from stellarlib.models.bosz.design import BOSZ_ADAPTER
 from stellarlib.models.miles.design import MILES_ADAPTER
+from stellarlib.models.stelib.design import STELIB_ADAPTER
 from stellarlib.models.tlusty.design import TLUSTY_ADAPTER
 
 __all__ = [
@@ -38,6 +39,7 @@ ADAPTERS: dict[str, FamilyAdapter] = {
     "bosz": BOSZ_ADAPTER,
     "tlusty": TLUSTY_ADAPTER,
     "miles": MILES_ADAPTER,
+    "stelib": STELIB_ADAPTER,
 }
 
 

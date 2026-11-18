@@ -17,6 +17,7 @@ Every field is traceable back to a native array. Transformations come from a fix
 | `wavelength` | Angstrom | linear | wavelength of the sampling grid; the air/vacuum convention is the product's own (declared per family in notes) and is never converted |
 | `wavelength_um` | um | linear | wavelength in micron (x * 1e-4) |
 | `observed_flux` | — | linear | observed flux of an empirical library's star — relative, with an arbitrary per-star normalization (unitless); mapped only by empirical families and never onto or from the model flux fields |
+| `observed_flux_density` | erg/(s cm^2 Angstrom) | linear | the observed energy flux density F_lambda at the observer as published — absolutely calibrated empirical spectrophotometry; mapped by empirical families whose calibration is absolute, and never onto or from the model flux fields |
 | `eddington_flux` | erg/(s cm^2 Angstrom) | linear | the Eddington flux H_lambda as published — the first angular moment of the specific intensity |
 | `surface_flux` | erg/(s cm^2 Angstrom) | linear | the astrophysical surface flux F_lambda = 4 pi H_lambda (4 pi * x) |
 | `continuum` | erg/(s cm^2 Angstrom) | linear | the continuum level as published, same units as the flux |
@@ -113,6 +114,43 @@ Field mapping version: `1`.
 
 - Sánchez-Blázquez, V., et al. 2006, MNRAS 371, 703 (the MILES library) (bibcode `2006MNRAS.371..703S`)
 - Falcón-Barroso, J., et al. 2011, A&A 532, A95 (updated stellar parameters and resolution) (bibcode `2011A&A...532A..95F`)
+
+## stelib (`stelib`)
+
+Field mapping version: `1`.
+
+- One FITS file per spectrum, 1-D 6700-pixel float32 image with BUNIT 'erg /s /cm2 /angstroms': the library is absolute spectrophotometry at the observer (the paper states a 3% overall photometric uncertainty). The served library is cor_sp/ — the interstellar-extinction and radial-velocity corrected set the paper publishes; the obs_sp/ raw counterparts are held and mirrored, never served as library members.
+- Every star sits on its own wavelength grid: the per-file linear-WCS (CRVAL1, CDELT1) pairs differ across the whole tree (live-measured 2026-11-18), so the axis is computed per file from its own header and no shared grid is assumed anywhere. The pixel domain runs ~3196-9898 A while the paper cites 3200-9500 A — both statements are the upstream's own and both are recorded.
+- observed_flux_density carries the absolutely-calibrated observed F_lambda; eddington_flux/surface_flux are deliberately not mapped — a model atmosphere flux label on a spectrum of a star at Earth would be a false claim (the air/vacuum convention of the wavelength axis is likewise not stated by the source and stays unset).
+- No interpolation is offered: the stars are an observed scatter in (Teff, log g, [Fe/H]) and each sits on its own grid, so a weighted mix of two stars' spectra is neither an observation of anything nor defined on a common sampling. Queries are nearest-star (voronoi semantics: warned, recorded).
+- The star table is fixed-width ASCII with the layout its ReadMe documents byte by byte; '-' marks a value it does not report. 48 of 255 stars miss at least one of Teff/log g/[Fe/H] (32 miss Teff, 44 miss log g, 44 miss [Fe/H]; 207 are fully parameterized): their files are held and mirrored like every other part, but they carry no query coordinates and are listed by star name in the set's notes — never silently dropped. One row (LHS 235) lists no corrected spectrum at all; it exists in the table and its observed counterpart is mirrored.
+
+### library (`library`)
+
+#### Field mappings
+
+| Unified field | Native source | Origin | Transformation | Notes |
+|---|---|---|---|---|
+| `wavelength` | `wavelength` | native | — | the star's own linear WCS axis (CRVAL1 + CDELT1 * (pixel - CRPIX1)); per-star grids, never assumed shared |
+| `wavelength_um` | `wavelength` | transformed_native | x * 1e-4 | — |
+| `observed_flux` | — | missing | — | not mapped: STELIB fluxes are absolutely calibrated (BUNIT erg/s/cm^2/Angstrom), not the unitless relative flux this field names |
+| `observed_flux_density` | `flux` | native | — | the star's observed flux density at the observer as published (absolute spectrophotometry, 3% overall uncertainty; cor_sp: extinction- and RV-corrected) |
+| `eddington_flux` | — | missing | — | not mapped: an empirical observed spectrum has no model Eddington-flux meaning |
+| `surface_flux` | — | missing | — | not mapped: an empirical observed spectrum has no model surface-flux meaning |
+| `continuum` | — | missing | — | no continuum column is published |
+
+#### Physical parameters
+
+| Parameter | Role | Value / source | Notes |
+|---|---|---|---|
+| `teff` | axis (varies across the published grid) | file values `teff` | — |
+| `log_surface_gravity` | axis (varies across the published grid) | file values `logg` | — |
+| `m_h` | axis (varies across the published grid) | file values `m_h` | — |
+| `spectral_resolution` | implicit (used by the model, not recoverable) | — | ~3 A FWHM (the paper's '<~3 A' resolution statement; 1 A sampling); not a selectable product axis |
+
+### Scientific references
+
+- Le Borgne, J.-F., et al. 2003, A&A 402, 433 (the STELIB library) (bibcode `2003A&A...402..433L`)
 
 ## TLUSTY OSTAR2002 / BSTAR2006 (`tlusty`)
 

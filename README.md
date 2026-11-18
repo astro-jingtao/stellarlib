@@ -6,8 +6,8 @@ stellarlib is a provenance-first, model-agnostic Python interface for reading,
 preserving, standardizing, and querying tabulated stellar spectra —
 model-atmosphere flux grids published on (Teff, log g, [M/H], ...) parameter
 nodes (BOSZ 2024, TLUSTY OSTAR2002/BSTAR2006) and empirical libraries of
-observed stars (MILES), each under a query contract faithful to what the
-data actually is.
+observed stars (MILES, STELIB), each under a query contract faithful to
+what the data actually is.
 
 **Status: early development (v0.1.0).** The public API may still change.
 
@@ -20,6 +20,8 @@ In scope, for the initial release:
   spectra).
 - **MILES** (research.iac.es, the 985-star empirical library: official FITS
   package + parameter table; relative flux, nearest-star queries).
+- **STELIB** (VizieR III/232, the 255-star empirical library: the whole
+  catalog tree; absolute spectrophotometry, nearest-star queries).
 - Native-file reading with full fidelity, unified field vocabulary, grid
   construction with hole reporting, cross-node interpolation (multilinear,
   plus Voronoi nearest-node for grids with holes), wavelength resampling,
@@ -101,13 +103,15 @@ official package the source publishes (BOSZ: all 112 (broadening,
 metallicity) directory mirrors — the rorig ones include the
 line-identification files — plus the shared wavelength grids; TLUSTY:
 all 20 per-composition vispec tars; MILES: the one official FITS
-package) — and `build_database` completes what is missing, one whole
-unit at a time (`dry_run` first):
+package; STELIB: the one VizieR catalog tree — `source=` picks its
+channel explicitly, `"cds"` the canonical default or `"adac"` the
+verified mirror) — and `build_database` completes what is missing, one
+whole unit at a time (`dry_run` first):
 
 ```python
 stellarlib.build_database("my-db", dry_run=True,
     declarations=[dict(family="bosz"), dict(family="tlusty"),
-                  dict(family="miles")])
+                  dict(family="miles"), dict(family="stelib")])
 db = stellarlib.open_database("my-db")
 ```
 
