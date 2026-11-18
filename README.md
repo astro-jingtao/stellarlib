@@ -189,7 +189,10 @@ stellarlib.verify_database("db-on-b", select=["stelib/library/all"])  # forced r
 
 ## Physics validation
 
-`tools/check_library_physics.py` checks the Bolometric closure
+`tools/probe_channels.py` reports which upstream channels the local
+network can reach (run it on any candidate download machine before
+choosing where to fetch from). `tools/check_library_physics.py` checks
+the Bolometric closure
 (∫H_λ dλ vs σT⁴/4π), the 4π flux convention against blackbodies, and the
 wavelength grid's log uniformity on real files.
 
