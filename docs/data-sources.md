@@ -363,11 +363,60 @@ relative flux — stellarlib maps it to the dedicated unified field
 `observed_flux_density` (erg/(s cm² Å)) and still does not map
 `eddington_flux`/`surface_flux` (a model atmosphere flux label on a
 star's spectrum at Earth would be a false claim). The stars form an
-observed scatter, each on its own wavelength grid, so queries are
+observed scatter, each on their own wavelength grid, so queries are
 nearest-star only (`interp="voronoi"` default, multilinear refused;
 `StelibSpectra`). The corrected set (`cor_sp/`) is the published
 library and what the reader serves; the raw `obs_sp/` counterparts are
 held and mirrored, never served as library members.
+
+## BaSeL (semi-empirical SED libraries — acquired, reader pending)
+
+Theoretical SEDs recalibrated onto empirical photometry: BaSeL 2.2
+(Lejeune, Cuisinier & Buser 1998, A&AS 130, 65; calibrated at solar
+metallicity) and BaSeL 3.1 (Westera et al. 2002, A&A 381, 524; the
+VizieR id J/A+A/381/524; calibrated metallicity-dependently via
+globular clusters). No stellarlib reader exists yet; the raw files are
+acquired and pinned below.
+
+### Channel (the author's page is the source of record)
+
+Every VizieR channel for J/A+A/381/524 failed from the development
+machine (2026-11-18): CDS direct hangs in the proxy CONNECT tunnel
+(the machine's known CDS failure mode), the ADAC mirror's J/A+A/381
+tree stops above 524, and the CfA query view answers HTTP 200 with
+"Table or Catalog not found" in the body. The author's own page
+(Pieter Westera, UFABC) answered directly and served both versions as
+tarballs: `http://professor.ufabc.edu.br/~pieter.westera/BaSeL.html`.
+The acquisition (both tarballs + format ReadMe, byte-verbatim, with
+sha256 and per-file provenance) lives in the main database tree at
+`acquisition/basel/` beside these records: `SOURCES.md`, `REPORT.md`,
+`sha256sums.txt`.
+
+### Contents (verified against the fetched tarballs 2026-11-18)
+
+- `BaSeL2_2.tar.gz` (27,295,538 B): 19 `lbc96_<metallicity>.cor`
+  files at [M/H] steps m50…p10 — one Kurucz-format file per
+  metallicity.
+- `BaSeL3_1.tar.gz` (18,053,781 B): two variants of one layout —
+  `WLBC99/` and `PADOVA2000/`, each 8 `wlbc99_*.cor` (m20, m15, m10,
+  m05, p00, p05) + 12 `calibration_*.{dw,gi}` files. What
+  distinguishes the two variants (the calibration basis) is to be
+  pinned from the paper when the reader is designed; both are held.
+
+### File format (pinned from the author's own BaSeL_ReadMe.txt)
+
+Kurucz-format ASCII, one file per metallicity, all spectra in a file
+on one shared wavelength grid stated once at the top: 1221 wavelengths
+in nm, FORTRAN `8f10.1`, spanning 9.1 nm to 160,000 nm. Each spectrum
+is a 176-line block: a parameter line `(2i6,4f6.2)` (spectrum number,
+Teff, log g, [Fe/H], turbulent velocity — always 0, unused —, hydrogen
+number fraction, unused) followed by 175 lines holding the 1221 flux
+values in `7e11.4`, stated unit erg/s/cm/cm/Hz. The author explicitly
+flags a unit ambiguity: the paper's wording suggests the fluxes may be
+per steradian (erg/s/cm²/Hz/sr), so "depending on your application you
+might have to multiply or divide by 4pi" — the implementation round
+must settle this against the paper's calibration math before any
+unified field mapping.
 
 ## Pitfall index (all recorded in the registry notes too)
 
@@ -392,3 +441,9 @@ held and mirrored, never served as library members.
    are J2000.0 — never assume a common grid, and resample explicitly
    (recorded) when combining; the 48 incompletely-parameterized stars
    are recorded, not queryable.
+9. BaSeL flux units carry an author-acknowledged 4π ambiguity
+   (erg/s/cm²/Hz versus per steradian) — the unified field mapping
+   must settle it against the paper's calibration math first, never
+   assume either way; and the BaSeL 3.1 tarball holds two variants
+   (WLBC99, PADOVA2000) whose distinction must be pinned before one is
+   served.

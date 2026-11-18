@@ -97,6 +97,16 @@ CHANNELS: list[tuple[str, str, str]] = [
             "outage from missing tree"
         ),
     ),
+    (
+        "basel-author-page",
+        "http://professor.ufabc.edu.br/~pieter.westera/BaSeL_ReadMe.txt",
+        (
+            "the author's own distribution page (index at "
+            "~pieter.westera/BaSeL.html): both BaSeL 2.2 and 3.1 "
+            "tarballs came from here (2026-11-18), after every VizieR "
+            "channel above proved dead"
+        ),
+    ),
     # -- STELIB (already mirrored; channels for a re-fetch) ----------------
     (
         "stelib-cds-https-ftp",
