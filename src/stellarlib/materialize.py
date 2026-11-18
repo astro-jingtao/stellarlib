@@ -14,8 +14,8 @@ would have to invent rows for missing nodes.
 from __future__ import annotations
 
 import dataclasses
-import json
 from datetime import datetime, timezone
+import json
 from pathlib import Path
 
 import numpy as np
@@ -25,7 +25,7 @@ from stellarlib.grid import SpectrumGrid
 from stellarlib.integrity import sha256_file
 from stellarlib.interp import corner_weights
 
-__all__ = ["materialize_grid", "open_materialized", "MaterializedGrid"]
+__all__ = ["MaterializedGrid", "materialize_grid", "open_materialized"]
 
 _SIDECAR_SUFFIX = ".sources.json"
 
@@ -38,7 +38,7 @@ def materialize_grid(
     grid: SpectrumGrid,
     path: str | Path,
     include_continuum: bool = True,
-) -> "MaterializedGrid":
+) -> MaterializedGrid:
     """Write one grid's merged arrays to ``<path>.npz`` plus a sidecar.
 
     ``<path>.npz`` holds one array per selectable axis (its sorted

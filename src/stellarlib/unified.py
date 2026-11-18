@@ -11,18 +11,19 @@ filename's Teff token).
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from typing import Any, Callable
 import warnings
-from typing import Any, Callable, Mapping
 
-import numpy as np
 from astropy import units as u
 from astropy.table import Table
+import numpy as np
 
 from stellarlib.core import FieldOrigin, FieldSpec
 from stellarlib.exceptions import WavelengthGridError
 from stellarlib.native import NativeSpectrum
 
-__all__ = ["UnifiedView", "TRANSFORMATIONS"]
+__all__ = ["TRANSFORMATIONS", "UnifiedView"]
 
 # Transformations are a fixed, named vocabulary — never free-form code.
 # A FieldSpec's `transformation` string must be one of these.
@@ -56,7 +57,7 @@ class UnifiedView:
         self._computations = dict(computations or {})
         self._constants = dict(constants or {})
 
-    def with_native(self, native: NativeSpectrum) -> "UnifiedView":
+    def with_native(self, native: NativeSpectrum) -> UnifiedView:
         """The same view (specs, computations, constants) over a new native.
 
         Used by derived products (resampling, node interpolation) so the

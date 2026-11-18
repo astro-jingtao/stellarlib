@@ -6,8 +6,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 from astropy.io import fits
+import pytest
 
 from stellarlib.models.stelib.reader import (
     is_corrected_spectrum,

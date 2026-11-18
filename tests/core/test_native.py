@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import numpy as np
-import pytest
 from astropy import units as u
 from astropy.table import Table
+import numpy as np
+import pytest
 
 from stellarlib.native import NativeSpectrum
 

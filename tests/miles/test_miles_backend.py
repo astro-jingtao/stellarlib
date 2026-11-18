@@ -4,8 +4,8 @@ query semantics (real upstream bytes; see tests/data/miles/README.md)."""
 
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
+import shutil
 
 import pytest
 

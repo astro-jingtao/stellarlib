@@ -22,8 +22,8 @@ name in the set's notes, never silently dropped.
 from __future__ import annotations
 
 import os
-import tarfile
 from pathlib import Path
+import tarfile
 
 from stellarlib.core import ModelIdentity
 from stellarlib.exceptions import (
@@ -59,7 +59,7 @@ from stellarlib.registry import (
 from stellarlib.spectrum import GridNode, Spectrum, SpectrumSet
 from stellarlib.unified import UnifiedView
 
-__all__ = ["read_miles", "recognize_miles", "miles_identity", "MILES_REFERENCES"]
+__all__ = ["MILES_REFERENCES", "miles_identity", "read_miles", "recognize_miles"]
 
 _SELECTABLE = ("teff", "log_surface_gravity", "m_h")
 _PER_FILE_URL = "https://research.iac.es/proyecto/miles/media/stellar_libraries/MILES"

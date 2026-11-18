@@ -12,12 +12,12 @@ import dataclasses
 from enum import Enum
 
 __all__ = [
+    "FieldOrigin",
+    "FieldSpec",
+    "ModelIdentity",
     "ParameterRole",
     "ParameterSource",
     "ParameterSpec",
-    "FieldSpec",
-    "FieldOrigin",
-    "ModelIdentity",
 ]
 
 
@@ -114,7 +114,7 @@ class ParameterSpec:
         return d
 
     @classmethod
-    def from_dict(cls, d: dict) -> "ParameterSpec":
+    def from_dict(cls, d: dict) -> ParameterSpec:
         d = dict(d)
         d["role"] = ParameterRole(d["role"])
         if d.get("source") is not None:
@@ -184,7 +184,7 @@ class FieldSpec:
         return d
 
     @classmethod
-    def from_dict(cls, d: dict) -> "FieldSpec":
+    def from_dict(cls, d: dict) -> FieldSpec:
         d = dict(d)
         d["origin"] = FieldOrigin(d["origin"])
         return cls(**d)
@@ -219,5 +219,5 @@ class ModelIdentity:
         return dataclasses.asdict(self)
 
     @classmethod
-    def from_dict(cls, d: dict) -> "ModelIdentity":
+    def from_dict(cls, d: dict) -> ModelIdentity:
         return cls(**d)

@@ -94,7 +94,6 @@ class TestMaterialize:
     def test_open_requires_sidecar(self, tmp_path):
         materialize_grid(_grid(), tmp_path / "block")
         (tmp_path / "block.npz.sources.json").unlink()
-        from stellarlib.materialize import open_materialized
 
         with pytest.raises(FileNotFoundError, match="sidecar"):
             open_materialized(tmp_path / "block.npz")

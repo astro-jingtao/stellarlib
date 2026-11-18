@@ -4,9 +4,9 @@ defect)."""
 
 from __future__ import annotations
 
+from importlib.resources import files
 import subprocess
 import sys
-from importlib.resources import files
 
 
 class TestSkillsTree:

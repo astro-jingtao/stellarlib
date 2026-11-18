@@ -48,7 +48,7 @@ from stellarlib.registry import (
 from stellarlib.spectrum import GridNode, Spectrum, SpectrumSet
 from stellarlib.unified import UnifiedView
 
-__all__ = ["read_bosz", "recognize_bosz", "bosz_identity", "BOSZ_REFERENCES"]
+__all__ = ["BOSZ_REFERENCES", "bosz_identity", "read_bosz", "recognize_bosz"]
 
 _FIELD_SPECS = field_spec_dict("bosz", "resampled_spectra")
 BOSZ_REFERENCES = references("bosz")

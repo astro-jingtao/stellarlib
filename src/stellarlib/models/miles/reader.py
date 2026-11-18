@@ -18,22 +18,22 @@ does not report for that star.
 from __future__ import annotations
 
 import io
-import re
 from pathlib import Path
+import re
 from typing import BinaryIO
 
-import numpy as np
 from astropy.io import fits
+import numpy as np
 
 from stellarlib.native import NativeSpectrum
 
 __all__ = [
     "MILES_FITS_RE",
     "PARAMS_NAME_RE",
-    "recognize_miles",
-    "read_miles_fits",
     "parse_params_table",
+    "read_miles_fits",
     "read_params_table",
+    "recognize_miles",
     "s_number_of",
 ]
 

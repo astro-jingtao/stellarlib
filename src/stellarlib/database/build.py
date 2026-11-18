@@ -26,15 +26,16 @@ already live where their project wants them.
 
 from __future__ import annotations
 
-import dataclasses
-import json
-import shutil
-import threading
+from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import dataclasses
 from datetime import datetime, timezone
 from fnmatch import fnmatch
+import json
 from pathlib import Path
-from typing import Iterable, NamedTuple
+import shutil
+import threading
+from typing import NamedTuple
 
 import requests
 
@@ -61,12 +62,12 @@ from stellarlib.models.tlusty.reader import recognize_tlusty
 from stellarlib.registry import references
 
 __all__ = [
-    "build_database",
-    "verify_database",
-    "VerifyReport",
-    "ProductVerification",
-    "register_local_product",
     "DESIGN_SCHEMA",
+    "ProductVerification",
+    "VerifyReport",
+    "build_database",
+    "register_local_product",
+    "verify_database",
 ]
 
 DESIGN_SCHEMA = "stellarlib-design/2"
@@ -884,7 +885,7 @@ def _bosz_collection(files: list[Path]) -> str:
     for p in files:
         if recognize_wave_grid(p):
             continue
-        from stellarlib.models.bosz.reader import parse_filename, WAVE_FILENAME_RE
+        from stellarlib.models.bosz.reader import WAVE_FILENAME_RE, parse_filename
 
         facts = parse_filename(p.name)
         resolutions.add(facts["resolution"])

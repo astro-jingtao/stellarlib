@@ -18,8 +18,8 @@ during development; the rgf raw set is accepted for the t3000 file.
 from __future__ import annotations
 
 import gzip
-import sys
 from pathlib import Path
+import sys
 
 import numpy as np
 

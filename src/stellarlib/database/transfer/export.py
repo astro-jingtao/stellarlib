@@ -16,9 +16,9 @@ from __future__ import annotations
 
 import dataclasses
 import json
+from pathlib import Path
 import shutil
 import subprocess
-from pathlib import Path
 
 from stellarlib.database.build import _apply_select
 from stellarlib.database.manifest import read_manifest

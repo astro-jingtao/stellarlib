@@ -9,18 +9,18 @@ reference-registered local products record absolute paths and say so.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 import json
 from pathlib import Path
-from typing import Mapping
 
 from stellarlib.exceptions import DataIntegrityError
 
 __all__ = [
     "MANIFEST_SCHEMA",
+    "empty_manifest",
     "manifest_path",
     "read_manifest",
     "write_manifest",
-    "empty_manifest",
 ]
 
 MANIFEST_SCHEMA = "stellarlib-manifest/1"

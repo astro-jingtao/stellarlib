@@ -11,9 +11,10 @@ asked for.
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 import dataclasses
 from pathlib import Path
-from typing import Any, Callable, Iterable, Mapping
+from typing import Any, Callable
 
 from stellarlib.core import FieldSpec, ModelIdentity, ParameterSpec
 from stellarlib.native import NativeSpectrum
@@ -80,7 +81,7 @@ class Spectrum:
         self.selection_info: Mapping[str, Any] | None = None
         self._unified_view = unified_view
 
-    def with_selection_info(self, info: Mapping[str, Any]) -> "Spectrum":
+    def with_selection_info(self, info: Mapping[str, Any]) -> Spectrum:
         """A shallow copy carrying grid-selection metadata.
 
         The native spectrum, identity, parameters, and unified view are

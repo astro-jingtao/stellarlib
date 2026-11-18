@@ -15,8 +15,8 @@ it after every registry edit:
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
+import sys
 
 from stellarlib.registry.docs import render_documentation
 

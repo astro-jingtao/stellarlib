@@ -3,6 +3,22 @@
 Design and feature work deliberately not yet done. Every item names the
 gap and the constraint any solution must respect; none of these are bugs.
 
+## ruff full-compliance pass — seeded 2026-11-18, remainder deferred
+
+- `ruff.toml` is seeded from the agent baseline template (target py39,
+  src layout); the seeding round applied the safe autofixes only
+  (102 findings: import sorting, `__all__` ordering, quoted-annotation
+  removal, `typing`→`collections.abc` imports) and left 409 findings
+  untouched by user decision, to be cleared in dedicated future rounds.
+- The remainder by family: PLC0415 function-local imports (91 — several
+  are deliberate lazy imports and need per-site judgment, not a sweep),
+  D1xx missing docstrings (~120), ANN00x missing annotations (~100),
+  size/complexity gates (C901/PLR09xx ~40), and a long tail of
+  single-site findings (F401 unused imports are unfixable by config —
+  `__init__.py` re-exports read as unused on purpose).
+- Constraint: findings are fixed in the code, never silenced — rule
+  edits, per-file ignores, and `noqa` each need their own stated reason.
+
 ## BOSZ rorig storage and fetch rounds — indefinitely deferred
 
 - The remaining rorig storage decision (~10.7 TB against ~9.4 TB free)

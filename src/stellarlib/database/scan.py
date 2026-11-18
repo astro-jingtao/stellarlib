@@ -28,11 +28,11 @@ from stellarlib.models.stelib.design import STELIB_ADAPTER
 from stellarlib.models.tlusty.design import TLUSTY_ADAPTER
 
 __all__ = [
-    "scan_database",
-    "enumerate_designs",
+    "ADAPTERS",
     "DatabaseReport",
     "ProductReport",
-    "ADAPTERS",
+    "enumerate_designs",
+    "scan_database",
 ]
 
 ADAPTERS: dict[str, FamilyAdapter] = {

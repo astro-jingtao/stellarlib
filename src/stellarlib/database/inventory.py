@@ -6,8 +6,8 @@ copied between machines, never merged.
 
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
+import json
 from pathlib import Path
 
 from stellarlib.database.core import Database

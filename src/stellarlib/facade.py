@@ -12,11 +12,11 @@ the right subclass from local paths or from a built database.
 
 from __future__ import annotations
 
-import dataclasses
-import warnings
 from abc import ABC
+from collections.abc import Iterable
+import dataclasses
 from pathlib import Path
-from typing import Iterable
+import warnings
 
 import numpy as np
 
@@ -32,11 +32,11 @@ from stellarlib.warnings import (
 )
 
 __all__ = [
-    "UnifiedSpectra",
     "BoszSpectra",
-    "TlustySpectra",
     "MilesSpectra",
     "StelibSpectra",
+    "TlustySpectra",
+    "UnifiedSpectra",
     "construct",
 ]
 
@@ -101,7 +101,7 @@ class UnifiedSpectra(SpectrumGrid, ABC):
                     tuple(dict(zip(axes_names, try_key)) for _ in [try_key]),
                 ),
                 weights=((1.0,),),
-                clamped=({name: False for name in axes_names},),
+                clamped=(dict.fromkeys(axes_names, False),),
             )
             self.last_record = record
             return self.load_node(try_key).with_selection_info(
@@ -146,7 +146,7 @@ class UnifiedSpectra(SpectrumGrid, ABC):
         indices pair with :meth:`corner_spectrum`.
         """
         self._validated_coordinates(
-            {k: 0.0 for k in queries}, require_all=False
+            dict.fromkeys(queries, 0.0), require_all=False
         )
         idx, w, clamped = corner_weights(self.axes, **queries)
         n_axes = len(self._selectable)
@@ -242,7 +242,7 @@ class UnifiedSpectra(SpectrumGrid, ABC):
             node_indices=((int(indices[0]),),),
             node_values=((dict(zip(self._selectable, node_key)),),),
             weights=((1.0,),),
-            clamped=({name: False for name in self._selectable},),
+            clamped=(dict.fromkeys(self._selectable, False),),
             note=(
                 "nearest published node; distances normalized per axis by "
                 f"the median grid step {scales}"
@@ -424,7 +424,7 @@ class BoszSpectra(UnifiedSpectra):
         am=0.0,
         cm=0.0,
         vmicro=None,
-    ) -> "BoszSpectra":
+    ) -> BoszSpectra:
         """Load BOSZ spectra from local files/directories or a database.
 
         ``paths`` may be a directory (a mirror is read by selecting one
@@ -484,7 +484,7 @@ class TlustySpectra(UnifiedSpectra):
         release=None,
         database=None,
         label=None,
-    ) -> "TlustySpectra":
+    ) -> TlustySpectra:
         """Load TLUSTY spectra from local files/directories or a database.
 
         ``release`` (``"OSTAR2002"`` or ``"BSTAR2006"``) is inferred from
@@ -541,7 +541,7 @@ class MilesSpectra(UnifiedSpectra):
         params_path=None,
         database=None,
         label=None,
-    ) -> "MilesSpectra":
+    ) -> MilesSpectra:
         """Load MILES spectra from the library tarball, an extracted
         directory or file list (``params_path=`` pins the parameter
         table; it is discovered among the sources when omitted), or from
@@ -601,7 +601,7 @@ class StelibSpectra(UnifiedSpectra):
         table_path=None,
         database=None,
         label=None,
-    ) -> "StelibSpectra":
+    ) -> StelibSpectra:
         """Load STELIB spectra from the catalog tree (or its cor_sp
         subdirectory), a file list (``table_path=`` pins the star table;
         it is discovered among the sources when omitted), or from a

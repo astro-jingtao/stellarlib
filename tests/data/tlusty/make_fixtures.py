@@ -25,9 +25,9 @@ Usage: python make_fixtures.py
 from __future__ import annotations
 
 import gzip
+from pathlib import Path
 import sys
 import tarfile
-from pathlib import Path
 
 import numpy as np
 

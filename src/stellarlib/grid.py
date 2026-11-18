@@ -11,18 +11,19 @@ the axis product that are missing — never silently filled.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 import itertools
 import os
-import warnings
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
+import warnings
 
 import numpy as np
 
 from stellarlib.exceptions import (
     AmbiguousFormatError,
-    GridPointNotFoundError,
     GridHoleError,
+    GridPointNotFoundError,
     UnrecognizedFormatError,
 )
 from stellarlib.spectrum import GridNode, Spectrum, SpectrumSet
@@ -73,7 +74,7 @@ class SpectrumGrid:
     @classmethod
     def from_paths(
         cls, model: str, paths: Iterable[str | os.PathLike], **reader_options
-    ) -> "SpectrumGrid":
+    ) -> SpectrumGrid:
         from stellarlib.models import get_backend
 
         backend = get_backend(model)
@@ -85,7 +86,7 @@ class SpectrumGrid:
     @classmethod
     def from_directory(
         cls, model: str, directory: str | os.PathLike, **reader_options
-    ) -> "SpectrumGrid":
+    ) -> SpectrumGrid:
         from stellarlib.models import get_backend
 
         backend = get_backend(model)

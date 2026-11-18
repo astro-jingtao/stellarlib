@@ -15,8 +15,8 @@ docs/data-sources.md).
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from pathlib import Path
-from typing import Iterable, Mapping
 
 from stellarlib.database.design import (
     PartDesign,
@@ -29,15 +29,15 @@ from stellarlib.database.signature_cache import SignatureCache
 from stellarlib.exceptions import SourceUnavailableError
 
 __all__ = [
-    "MilesAdapter",
-    "MILES_ADAPTER",
-    "LIBRARY_TAR_NAME",
-    "LIBRARY_TAR_URL",
-    "PARAMS_NAME",
-    "PARAMS_URL",
     "LIBRARY_PAGE_NAME",
     "LIBRARY_PAGE_URL",
+    "LIBRARY_TAR_NAME",
+    "LIBRARY_TAR_URL",
+    "MILES_ADAPTER",
     "MILES_SPECTRA",
+    "PARAMS_NAME",
+    "PARAMS_URL",
+    "MilesAdapter",
 ]
 
 _BASE = "https://research.iac.es/proyecto/miles"

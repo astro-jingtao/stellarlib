@@ -17,8 +17,8 @@ by its own member name.
 from __future__ import annotations
 
 import os
-import tarfile
 from pathlib import Path
+import tarfile
 
 from stellarlib.core import ModelIdentity
 from stellarlib.exceptions import (
@@ -49,7 +49,7 @@ from stellarlib.registry import (
 from stellarlib.spectrum import GridNode, Spectrum, SpectrumSet
 from stellarlib.unified import UnifiedView
 
-__all__ = ["read_tlusty", "recognize_tlusty", "tlusty_identity", "TLUSTY_REFERENCES"]
+__all__ = ["TLUSTY_REFERENCES", "read_tlusty", "recognize_tlusty", "tlusty_identity"]
 
 _SELECTABLE = ("teff", "log_surface_gravity")
 _OSTAR_SPAN = (27500, 55000)

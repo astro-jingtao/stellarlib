@@ -13,13 +13,13 @@ import dataclasses
 from enum import Enum
 
 __all__ = [
-    "SourceClass",
-    "SourceStatus",
-    "SourceRecord",
     "DataAsset",
-    "SourceChain",
-    "Reference",
     "Provenance",
+    "Reference",
+    "SourceChain",
+    "SourceClass",
+    "SourceRecord",
+    "SourceStatus",
 ]
 
 
@@ -70,7 +70,7 @@ class SourceRecord:
         return d
 
     @classmethod
-    def from_dict(cls, d: dict) -> "SourceRecord":
+    def from_dict(cls, d: dict) -> SourceRecord:
         d = dict(d)
         d["source_class"] = SourceClass(d["source_class"])
         d["status"] = SourceStatus(d.get("status", "not_checked"))
@@ -96,7 +96,7 @@ class DataAsset:
         return d
 
     @classmethod
-    def from_dict(cls, d: dict) -> "DataAsset":
+    def from_dict(cls, d: dict) -> DataAsset:
         d = dict(d)
         if d.get("source") is not None:
             d["source"] = SourceRecord.from_dict(d["source"])
@@ -125,7 +125,7 @@ class SourceChain:
         }
 
     @classmethod
-    def from_dict(cls, d: dict) -> "SourceChain":
+    def from_dict(cls, d: dict) -> SourceChain:
         d = dict(d)
         d["upstream_sources"] = [
             SourceRecord.from_dict(s) for s in d.get("upstream_sources", [])
@@ -150,7 +150,7 @@ class Reference:
         return dataclasses.asdict(self)
 
     @classmethod
-    def from_dict(cls, d: dict) -> "Reference":
+    def from_dict(cls, d: dict) -> Reference:
         return cls(**d)
 
 
@@ -187,7 +187,7 @@ class Provenance:
         }
 
     @classmethod
-    def from_dict(cls, d: dict) -> "Provenance":
+    def from_dict(cls, d: dict) -> Provenance:
         return cls(
             data_sources=tuple(
                 SourceRecord.from_dict(s) for s in d.get("data_sources", [])

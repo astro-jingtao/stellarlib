@@ -13,8 +13,8 @@ exists upstream, and none is invented here.
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from pathlib import Path
-from typing import Iterable, Mapping
 
 from stellarlib.database.design import (
     PartDesign,
@@ -26,7 +26,7 @@ from stellarlib.database.design import (
 from stellarlib.database.signature_cache import SignatureCache
 from stellarlib.exceptions import SourceUnavailableError
 
-__all__ = ["TlustyAdapter", "TLUSTY_ADAPTER", "TLUSTY_TARS"]
+__all__ = ["TLUSTY_ADAPTER", "TLUSTY_TARS", "TlustyAdapter"]
 
 _BASE = "https://tlusty.oca.eu/tlusty/Tlusty2002/database"
 

@@ -25,9 +25,9 @@ from __future__ import annotations
 
 import dataclasses
 import os
+from pathlib import Path
 import shutil
 import uuid
-from pathlib import Path
 
 from stellarlib.database.build import _apply_select
 from stellarlib.database.design import VerdictKind

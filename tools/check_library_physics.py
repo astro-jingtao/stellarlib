@@ -23,16 +23,15 @@ the per-resolution wavelength grid.
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
+import sys
 
+from astropy import constants as const, units as u
 import numpy as np
-from astropy import constants as const
-from astropy import units as u
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from stellarlib.models.bosz.backend import read_bosz  # noqa: E402
+from stellarlib.models.bosz.backend import read_bosz
 
 SIGMA = const.sigma_sb.cgs.value  # erg / (cm^2 s K^4)
 

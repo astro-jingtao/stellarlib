@@ -22,8 +22,8 @@ the result is a derived product and never masquerades as native.
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping, Sequence
 import dataclasses
-from typing import Iterable, Mapping, Sequence
 
 import numpy as np
 from scipy.spatial import cKDTree
@@ -33,9 +33,9 @@ from stellarlib.exceptions import UnsafeInterpolationError
 __all__ = [
     "InterpolationRecord",
     "corner_weights",
-    "voronoi_nearest",
-    "resample_wavelengths",
     "interp_methods",
+    "resample_wavelengths",
+    "voronoi_nearest",
 ]
 
 _METHODS = ("multilinear", "voronoi")

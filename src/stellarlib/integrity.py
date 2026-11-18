@@ -7,7 +7,7 @@ from pathlib import Path
 
 from stellarlib.exceptions import DataIntegrityError
 
-__all__ = ["sha256_file", "sha256_bytes", "verify_checksum"]
+__all__ = ["sha256_bytes", "sha256_file", "verify_checksum"]
 
 
 def sha256_bytes(payload: bytes) -> str:

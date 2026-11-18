@@ -22,11 +22,11 @@ carry the exact ``cor_sp``/``obs_sp`` member names each row joins to.
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
+import re
 
-import numpy as np
 from astropy.io import fits
+import numpy as np
 
 from stellarlib.native import NativeSpectrum
 

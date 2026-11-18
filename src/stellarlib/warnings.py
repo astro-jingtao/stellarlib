@@ -7,15 +7,15 @@ selection/interpolation records attached to the returned objects.
 """
 
 __all__ = [
-    "StellarLibWarning",
-    "NearestGridPointWarning",
-    "VoronoiInterpolationWarning",
+    "CatalogSizeMismatchWarning",
+    "ChecksumUnavailableWarning",
     "ClampedInterpolationWarning",
     "DerivedQuantityWarning",
     "IncompleteMetadataWarning",
+    "NearestGridPointWarning",
+    "StellarLibWarning",
     "ThirdPartySourceWarning",
-    "ChecksumUnavailableWarning",
-    "CatalogSizeMismatchWarning",
+    "VoronoiInterpolationWarning",
 ]
 
 

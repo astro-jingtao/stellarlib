@@ -20,10 +20,11 @@ themselves are injected at read time through ``resolve_parameters``.
 
 from __future__ import annotations
 
-import json
+from collections.abc import Mapping
 from functools import lru_cache
+import json
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 from stellarlib.core import (
     FieldOrigin,
@@ -37,18 +38,18 @@ _REGISTRY_FILE = Path(__file__).with_name("unified_parameters.json")
 _MODELS_DIR = Path(__file__).resolve().parent.parent / "models"
 
 __all__ = [
-    "load_registry",
-    "unified_field_names",
-    "backend_names",
-    "product_names",
-    "field_specs",
-    "field_spec_dict",
-    "resolve_parameters",
-    "references",
-    "backend_notes",
-    "product_notes",
     "REGISTRY_FILE",
     "backend_data_file",
+    "backend_names",
+    "backend_notes",
+    "field_spec_dict",
+    "field_specs",
+    "load_registry",
+    "product_names",
+    "product_notes",
+    "references",
+    "resolve_parameters",
+    "unified_field_names",
 ]
 
 REGISTRY_FILE = _REGISTRY_FILE

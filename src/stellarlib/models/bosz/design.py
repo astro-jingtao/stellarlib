@@ -27,10 +27,10 @@ retried on the next build.
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 import dataclasses
-import re
 from pathlib import Path
-from typing import Iterable, Mapping
+import re
 
 from stellarlib.database.design import (
     PartDesign,
@@ -44,14 +44,14 @@ from stellarlib.database.signature_cache import SignatureCache
 from stellarlib.exceptions import SourceUnavailableError
 
 __all__ = [
-    "BoszAdapter",
     "BOSZ_ADAPTER",
-    "bosz_filename",
-    "family_for",
-    "bulkdl_script_name",
-    "parse_directory_index",
     "BOSZ_BROADENINGS",
     "BOSZ_METALLICITIES",
+    "BoszAdapter",
+    "bosz_filename",
+    "bulkdl_script_name",
+    "family_for",
+    "parse_directory_index",
 ]
 
 _BASE = "https://archive.stsci.edu/hlsps/bosz/bosz2024"

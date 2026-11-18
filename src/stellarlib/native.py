@@ -16,12 +16,13 @@ an explicit, recorded pairing with the companion wavelength file.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 import dataclasses
-from typing import Any, Mapping
+from typing import Any
 
-import numpy as np
 from astropy import units as u
 from astropy.table import Column, Table
+import numpy as np
 
 __all__ = ["NativeSpectrum"]
 

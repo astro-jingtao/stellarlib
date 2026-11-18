@@ -12,11 +12,12 @@ the source publishes.
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 import dataclasses
-import hashlib
 from datetime import datetime, timezone
+import hashlib
 from pathlib import Path
-from typing import Iterable, Mapping, Protocol
+from typing import Protocol
 
 import requests
 
@@ -24,14 +25,14 @@ from stellarlib.database.signature_cache import SignatureCache
 from stellarlib.integrity import sha256_file
 
 __all__ = [
-    "PartDesign",
-    "ProductDesign",
-    "PartVerdict",
-    "VerdictKind",
+    "FETCH_USER_AGENT",
     "FamilyAdapter",
+    "PartDesign",
+    "PartVerdict",
+    "ProductDesign",
+    "VerdictKind",
     "classify_part_generic",
     "fetch_streamed_part",
-    "FETCH_USER_AGENT",
 ]
 
 
