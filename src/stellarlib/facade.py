@@ -16,13 +16,16 @@ from abc import ABC
 from collections.abc import Iterable
 import dataclasses
 from pathlib import Path
+from typing import TYPE_CHECKING
 import warnings
 
 import numpy as np
 
-from stellarlib.exceptions import GridHoleError, UnsafeInterpolationError
+from stellarlib.database.core import open_database
+from stellarlib.exceptions import GridHoleError, UnsafeInterpolationError, UnsupportedModelError
 from stellarlib.grid import SpectrumGrid
 from stellarlib.interp import InterpolationRecord, corner_weights, voronoi_nearest
+from stellarlib.models import parse_model_spec
 from stellarlib.native import NativeSpectrum
 from stellarlib.provenance import Provenance
 from stellarlib.spectrum import Spectrum, SpectrumSet
@@ -31,7 +34,11 @@ from stellarlib.warnings import (
     VoronoiInterpolationWarning,
 )
 
+if TYPE_CHECKING:
+    from stellarlib.database.core import Database
+
 __all__ = [
+    "BaselSpectra",
     "BoszSpectra",
     "MilesSpectra",
     "StelibSpectra",
@@ -51,7 +58,8 @@ class UnifiedSpectra(SpectrumGrid, ABC):
 
     model_name: str = ""
 
-    def __init__(self, sets: Iterable[SpectrumSet]):
+    def __init__(self, sets: Iterable[SpectrumSet]) -> None:
+        """Hold the grid's sets and reset the query record."""
         super().__init__(sets)
         self.last_record: InterpolationRecord | None = None
 
@@ -149,7 +157,6 @@ class UnifiedSpectra(SpectrumGrid, ABC):
             dict.fromkeys(queries, 0.0), require_all=False
         )
         idx, w, clamped = corner_weights(self.axes, **queries)
-        n_axes = len(self._selectable)
         per_query = np.atleast_1d(np.asarray(next(iter(queries.values())), dtype=float))
         n = per_query.size
         for q in range(n):
@@ -365,7 +372,7 @@ class UnifiedSpectra(SpectrumGrid, ABC):
             },
         )
         merged = dataclasses.replace(
-            merged, transformations=merged.transformations + (transformation,)
+            merged, transformations=(*merged.transformations, transformation)
         )
         self._record(
             method="multilinear",
@@ -390,6 +397,7 @@ class UnifiedSpectra(SpectrumGrid, ABC):
     # -- introspection ---------------------------------------------------------
 
     def describe(self) -> str:
+        """A human-readable summary: identity, axes, holes, cache size."""
         lines = [
             f"{type(self).__name__}: {self.identity.label}",
             f"product: {self.identity.product}",
@@ -416,14 +424,15 @@ class BoszSpectra(UnifiedSpectra):
     @classmethod
     def construct(
         cls,
-        paths=None,
-        wave_path=None,
-        database=None,
-        label=None,
-        collection=None,
-        am=0.0,
-        cm=0.0,
-        vmicro=None,
+        paths: str | Path | Iterable[str | Path] | None = None,
+        wave_path: str | Path | None = None,
+        database: str | Path | Database | None = None,
+        label: str | None = None,
+        collection: str | None = None,
+        am: float = 0.0,
+        cm: float = 0.0,
+        vmicro: float | None = None,
+        release: str | None = None,
     ) -> BoszSpectra:
         """Load BOSZ spectra from local files/directories or a database.
 
@@ -441,7 +450,7 @@ class BoszSpectra(UnifiedSpectra):
         product).
         """
         if database is not None:
-            selection = dict(am=am, cm=cm, vmicro=vmicro)
+            selection = {"am": am, "cm": cm, "vmicro": vmicro}
             # only a stated pin rides along: a None would occupy the
             # option and turn the database's cross-product sidecar
             # discovery off (grid treats a present key as a pin)
@@ -480,10 +489,10 @@ class TlustySpectra(UnifiedSpectra):
     @classmethod
     def construct(
         cls,
-        paths=None,
-        release=None,
-        database=None,
-        label=None,
+        paths: str | Path | Iterable[str | Path] | None = None,
+        release: str | None = None,
+        database: str | Path | Database | None = None,
+        label: str | None = None,
     ) -> TlustySpectra:
         """Load TLUSTY spectra from local files/directories or a database.
 
@@ -501,6 +510,71 @@ class TlustySpectra(UnifiedSpectra):
         options = {} if release is None else {"release": release}
         grid = SpectrumGrid.from_paths("tlusty", _as_path_list(paths), **options)
         return cls(grid.sets)
+
+
+class BaselSpectra(UnifiedSpectra):
+    """BaSeL 2.2/3.1 semi-empirical SEDs under the unified interface.
+
+    BaSeL is a theoretical grid (multilinear interpolation applies), but
+    each metallicity publishes its own (Teff, log g) node set, so the
+    3-axis grid carries large honest holes — a holed bracket cell
+    refuses rectangular interpolation and says why;
+    ``interp="voronoi"`` answers with the nearest published node.
+    """
+
+    model_name = "basel"
+
+    @classmethod
+    def construct(
+        cls,
+        paths: str | Path | Iterable[str | Path] | None = None,
+        variant: str | None = None,
+        database: str | Path | Database | None = None,
+        label: str | None = None,
+        release: str | None = None,
+    ) -> BaselSpectra:
+        """Load BaSeL spectra from the published tarball, an extracted
+        tree, or a list of ``*.cor`` files, or from a database built
+        with ``stellarlib.build_database``.
+
+        ``variant`` states the calibration of a 3.1 set: required for a
+        flat 3.1 file set and for sources holding both variants,
+        inferred from a one-variant tree, rejected for 2.2. There is no
+        default — the two calibrations serve different applications
+        (WLBC99: empirical colour-temperature consistency;
+        PADOVA2000: globular-cluster CMDs with Padova 2000 isochrones).
+        """
+        if database is not None:
+            if release is None:
+                releases = sorted(
+                    {p.release for p in _basel_db(database).products_for("basel")}
+                    - {"format"}
+                )
+                if len(releases) != 1:
+                    raise ValueError(
+                        f"basel release not stated and the database holds "
+                        f"{releases}; qualify the model, e.g. "
+                        f"'basel/{releases[0] if releases else '3.1'}'"
+                    )
+                release = releases[0]
+            return cls(
+                _database_grid(
+                    f"basel/{release}", database, label, variant=variant
+                ).sets
+            )
+        if paths is None:
+            raise ValueError(
+                "construct('basel/<release>') requires paths= of the "
+                "tarball, extracted files, or database= of a built database"
+            )
+        options = {} if variant is None else {"variant": variant}
+        grid = SpectrumGrid.from_paths("basel", _as_path_list(paths), **options)
+        return cls(grid.sets)
+
+
+def _basel_db(database: str | Path | Database) -> Database:
+
+    return database if not isinstance(database, (str, Path)) else open_database(database)
 
 
 class MilesSpectra(UnifiedSpectra):
@@ -522,6 +596,8 @@ class MilesSpectra(UnifiedSpectra):
         range_policy: str = "strict",
         **coordinates,
     ) -> Spectrum:
+        """Nearest-star point query (see the class docstring for why
+        interpolation between observed stars is refused)."""
         if interp == "multilinear":
             raise ValueError(
                 "interp='multilinear' is not defined for MILES: the stars "
@@ -537,10 +613,11 @@ class MilesSpectra(UnifiedSpectra):
     @classmethod
     def construct(
         cls,
-        paths=None,
-        params_path=None,
-        database=None,
-        label=None,
+        paths: str | Path | Iterable[str | Path] | None = None,
+        params_path: str | Path | None = None,
+        database: str | Path | Database | None = None,
+        label: str | None = None,
+        release: str | None = None,
     ) -> MilesSpectra:
         """Load MILES spectra from the library tarball, an extracted
         directory or file list (``params_path=`` pins the parameter
@@ -582,6 +659,8 @@ class StelibSpectra(UnifiedSpectra):
         range_policy: str = "strict",
         **coordinates,
     ) -> Spectrum:
+        """Nearest-star point query (see the class docstring for why
+        interpolation between observed stars is refused)."""
         if interp == "multilinear":
             raise ValueError(
                 "interp='multilinear' is not defined for STELIB: the stars "
@@ -597,10 +676,11 @@ class StelibSpectra(UnifiedSpectra):
     @classmethod
     def construct(
         cls,
-        paths=None,
-        table_path=None,
-        database=None,
-        label=None,
+        paths: str | Path | Iterable[str | Path] | None = None,
+        table_path: str | Path | None = None,
+        database: str | Path | Database | None = None,
+        label: str | None = None,
+        release: str | None = None,
     ) -> StelibSpectra:
         """Load STELIB spectra from the catalog tree (or its cor_sp
         subdirectory), a file list (``table_path=`` pins the star table;
@@ -623,9 +703,12 @@ class StelibSpectra(UnifiedSpectra):
 
 
 def _database_grid(
-    model: str, database, label, collection=None, **selection
+    model: str,
+    database: str | Path | Database,
+    label: str | None,
+    collection: str | None = None,
+    **selection,
 ) -> SpectrumGrid:
-    from stellarlib.database.core import open_database
 
     db = database if not isinstance(database, (str, Path)) else open_database(database)
     if "/" in model:
@@ -649,13 +732,14 @@ def _database_grid(
     )
 
 
-def _as_path_list(paths) -> list:
+def _as_path_list(paths: str | Path | Iterable[str | Path]) -> list:
     if isinstance(paths, (str, Path)):
         return [paths]
     return list(paths)
 
 
 _REGISTRY = {
+    "basel": BaselSpectra,
     "bosz": BoszSpectra,
     "tlusty": TlustySpectra,
     "miles": MilesSpectra,
@@ -665,8 +749,8 @@ _REGISTRY = {
 
 def construct(
     model: str,
-    paths=None,
-    database=None,
+    paths: str | Path | Iterable[str | Path] | None = None,
+    database: str | Path | Database | None = None,
     label: str | None = None,
     **family_options,
 ) -> UnifiedSpectra:
@@ -682,8 +766,6 @@ def construct(
     ``label`` to pick one product when a release publishes several);
     never from the network.
     """
-    from stellarlib.exceptions import UnsupportedModelError
-    from stellarlib.models import parse_model_spec
 
     family, release = parse_model_spec(model)
     if release is None:
@@ -698,7 +780,10 @@ def construct(
             f"registered families: {sorted(_REGISTRY)}"
         ) from None
 
-    obj = cls.construct(paths=paths, database=database, label=label, **family_options)
+    obj = cls.construct(
+        paths=paths, database=database, label=label,
+        release=release, **family_options
+    )
     if obj.identity.release != release:
         raise ValueError(
             f"model {model!r} does not match the data: the files state "

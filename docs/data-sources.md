@@ -369,14 +369,15 @@ nearest-star only (`interp="voronoi"` default, multilinear refused;
 library and what the reader serves; the raw `obs_sp/` counterparts are
 held and mirrored, never served as library members.
 
-## BaSeL (semi-empirical SED libraries — acquired, reader pending)
+## BaSeL (semi-empirical SED libraries — implemented as basel/2.2, basel/3.1)
 
 Theoretical SEDs recalibrated onto empirical photometry: BaSeL 2.2
 (Lejeune, Cuisinier & Buser 1998, A&AS 130, 65; calibrated at solar
 metallicity) and BaSeL 3.1 (Westera et al. 2002, A&A 381, 524; the
 VizieR id J/A+A/381/524; calibrated metallicity-dependently via
-globular clusters). No stellarlib reader exists yet; the raw files are
-acquired and pinned below.
+globular clusters). The stellarlib families are `basel/2.2` and
+`basel/3.1`; the raw acquisition records live in the main database
+tree at `acquisition/basel/`.
 
 ### Channel (the author's page is the source of record)
 
@@ -390,33 +391,60 @@ tarballs: `http://professor.ufabc.edu.br/~pieter.westera/BaSeL.html`.
 The acquisition (both tarballs + format ReadMe, byte-verbatim, with
 sha256 and per-file provenance) lives in the main database tree at
 `acquisition/basel/` beside these records: `SOURCES.md`, `REPORT.md`,
-`sha256sums.txt`.
+`sha256sums.txt`. The database blueprint declares exactly those three
+published files as products (`basel/2.2/library`, `basel/3.1/library`,
+`basel/format/readme`).
 
 ### Contents (verified against the fetched tarballs 2026-11-18)
 
 - `BaSeL2_2.tar.gz` (27,295,538 B): 19 `lbc96_<metallicity>.cor`
   files at [M/H] steps m50…p10 — one Kurucz-format file per
-  metallicity.
+  metallicity, 375–467 blocks per file.
 - `BaSeL3_1.tar.gz` (18,053,781 B): two variants of one layout —
-  `WLBC99/` and `PADOVA2000/`, each 8 `wlbc99_*.cor` (m20, m15, m10,
-  m05, p00, p05) + 12 `calibration_*.{dw,gi}` files. What
-  distinguishes the two variants (the calibration basis) is to be
-  pinned from the paper when the reader is designed; both are held.
+  `WLBC99/` and `PADOVA2000/`, each 6 `wlbc99_*.cor` (m20, m15, m10,
+  m05, p00, p05) + 12 `calibration_*.{dw,gi}` empirical color tables
+  (dw = dwarf, gi = giant; the calibration targets). The two variants
+  are the same hybrid theoretical library recalibrated against two
+  incompatible targets (Westera et al. 2002): WLBC99 matches empirical
+  colour–temperature relations (individual-star work); PADOVA2000
+  reproduces globular-cluster colour–magnitude diagrams combined with
+  Padova 2000 isochrones (population synthesis), at the price of
+  consistency with empirical Te–colour relations (giant-branch Teff
+  deviations up to ~500 K). One grid serves exactly one variant — an
+  explicit read-side selection with no default; at solar metallicity
+  the two nearly coincide, and the [M/H] = +0.5 file is BaSeL 2.2
+  unmodified in both.
 
 ### File format (pinned from the author's own BaSeL_ReadMe.txt)
 
 Kurucz-format ASCII, one file per metallicity, all spectra in a file
 on one shared wavelength grid stated once at the top: 1221 wavelengths
-in nm, FORTRAN `8f10.1`, spanning 9.1 nm to 160,000 nm. Each spectrum
-is a 176-line block: a parameter line `(2i6,4f6.2)` (spectrum number,
-Teff, log g, [Fe/H], turbulent velocity — always 0, unused —, hydrogen
-number fraction, unused) followed by 175 lines holding the 1221 flux
-values in `7e11.4`, stated unit erg/s/cm/cm/Hz. The author explicitly
-flags a unit ambiguity: the paper's wording suggests the fluxes may be
-per steradian (erg/s/cm²/Hz/sr), so "depending on your application you
-might have to multiply or divide by 4pi" — the implementation round
-must settle this against the paper's calibration math before any
-unified field mapping.
+in nm, FORTRAN `8f10.1`, spanning 9.1 nm to 160,000 nm — the grid is
+identical in every file of both versions. Each spectrum is a 176-line
+block: a parameter line `(2i6,4f6.2)` (spectrum number, Teff, log g,
+[Fe/H], plus two columns the author marks unused but which carry 0.0
+or 2.0 and 0.0 or 1.25 in the published files — recorded verbatim,
+never interpreted) followed by 175 lines holding the 1221 flux values
+in `7e11.4`, stated unit erg/s/cm/cm/Hz.
+
+The author-acknowledged 4π ambiguity is settled by the numbers: the
+bolometric closure of the published blocks reproduces σT⁴/4π to
+0.1–0.5% across Teff 2000–50000 K in both versions and both variants,
+so the files hold the Eddington flux per steradian (erg/s/cm²/Hz/sr)
+and `surface_flux` = 4πH. The papers pin the bolometric integral to
+the effective-temperature definition and the recalibration conserves
+each model's bolometric flux — corroborating, but only the files
+state the steradian convention.
+
+Two further published facts the reader preserves: the per-metallicity
+(Teff, log g) node sets differ (450–459 blocks per 3.1 file, 375–467
+per 2.2), so the 3-axis grid carries large honest holes — voronoi is
+the hole-tolerant path; and 2.2 holds 29 blocks whose [Fe/H] column
+disagrees with the filename's metallicity (p01: 20 blocks stating
+0.2; p02: 3 stating 1.0; p03: 6 stating 1.0) — the FILE names the
+node's metallicity (the library's own partition; block-feh coordinates
+would collide across files) and every mismatch is recorded per node
+and in the set notes, never relabeled.
 
 ## Pitfall index (all recorded in the registry notes too)
 
@@ -441,9 +469,11 @@ unified field mapping.
    are J2000.0 — never assume a common grid, and resample explicitly
    (recorded) when combining; the 48 incompletely-parameterized stars
    are recorded, not queryable.
-9. BaSeL flux units carry an author-acknowledged 4π ambiguity
-   (erg/s/cm²/Hz versus per steradian) — the unified field mapping
-   must settle it against the paper's calibration math first, never
-   assume either way; and the BaSeL 3.1 tarball holds two variants
-   (WLBC99, PADOVA2000) whose distinction must be pinned before one is
-   served.
+9. BaSeL flux units carry an author-acknowledged 4π ambiguity —
+   settled by the bolometric closure of the files themselves (Eddington
+   flux per steradian; `surface_flux` = 4πH); the BaSeL 3.1 tarball
+   holds two calibrations (WLBC99, PADOVA2000) serving different
+   applications — one grid serves one variant, stated explicitly,
+   never defaulted; and 29 BaSeL 2.2 blocks declare an [Fe/H] column
+   that contradicts their filename — the file labels the node, the
+   mismatch is recorded, never fixed.

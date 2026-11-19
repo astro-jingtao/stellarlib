@@ -12,7 +12,6 @@ from stellarlib.core import FieldOrigin, ParameterRole, ParameterSource
 from stellarlib.provenance import Reference
 from stellarlib.registry import (
     REGISTRY_FILE,
-    backend_data_file,
     backend_names,
     backend_notes,
     field_spec_dict,
@@ -24,6 +23,7 @@ from stellarlib.registry import (
     resolve_parameters,
     unified_field_names,
 )
+from stellarlib.unified import TRANSFORMATIONS
 
 REPO_ROOT = Path(__file__).parent.parent
 
@@ -36,7 +36,7 @@ class TestRegistryData:
     def test_loads_and_lists_backends_and_products(self):
         reg = load_registry()
         assert reg["schema_version"] == 1
-        assert set(backend_names()) == {"bosz", "tlusty", "miles", "stelib"}
+        assert set(backend_names()) == {"bosz", "tlusty", "miles", "stelib", "basel"}
         assert product_names("bosz") == ("resampled_spectra",)
         assert set(product_names("tlusty")) == {"ostar2002", "bstar2006"}
         assert product_names("miles") == ("library",)
@@ -88,8 +88,6 @@ class TestFieldSpecs:
             for product in product_names(backend):
                 for spec in field_specs(backend, product):
                     if spec.origin is FieldOrigin.TRANSFORMED_NATIVE:
-                        from stellarlib.unified import TRANSFORMATIONS
-
                         assert spec.transformation in TRANSFORMATIONS
                         assert spec.native_unit is not None
 
@@ -182,7 +180,8 @@ class TestReferencesAndNotes:
     def test_references_are_reference_objects(self):
         for backend in backend_names():
             refs = references(backend)
-            assert refs and all(isinstance(r, Reference) for r in refs)
+            assert refs
+            assert all(isinstance(r, Reference) for r in refs)
         assert references("bosz")[0].bibcode == "2024A&A...688A.197M"
         assert references("tlusty")[0].bibcode == "2003ApJS..146..417L"
 
@@ -209,5 +208,6 @@ class TestGeneratedDocument:
             capture_output=True,
             text=True,
             cwd=REPO_ROOT,
+            check=False,  # the return code is asserted below, with output
         )
         assert result.returncode == 0, result.stdout + result.stderr

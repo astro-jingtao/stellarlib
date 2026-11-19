@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "family": "basel",
+  "release": "2.2/3.1",
+  "description": "BaSeL semi-empirical theoretical SED libraries: theoretical spectra (Kurucz ATLAS9 and others) recalibrated onto empirical color-temperature relations, published by the author (Pieter Westera, UFABC) as one tarball per version plus a format ReadMe. BaSeL 2.2 (Lejeune, Cuisinier & Buser 1998) calibrates at solar metallicity; BaSeL 3.1 (Westera et al. 2002) recalibrates per metallicity and ships TWO calibration variants (WLBC99, PADOVA2000) in the one tarball — genuinely different recalibrations at the same node sets, a read-side grid selection. The complete inventory below is byte-verified (2026-11-18); the blueprint declares all three files.",
+  "base_url": "http://professor.ufabc.edu.br/~pieter.westera",
+  "url_template": "{base_url}/{file}",
+  "verified": {
+    "date": "2026-11-18",
+    "files": {
+      "BaSeL2_2.tar.gz": {
+        "bytes": 27295538,
+        "sha256": "8bbc772dcbad4e62e38dd2b2a7c73543c2c0a3ad61d57766c1cf7d6ed39ce68b",
+        "content": "BaSeL 2.2: 19 lbc96_<metallicity>.cor files, [M/H] -5.0 to +1.0 (m50 m45 m40 m35 m30 m25 m20 m15 m10 m05 m03 m02 m01 p00 p01 p02 p03 p05 p10)"
+      },
+      "BaSeL3_1.tar.gz": {
+        "bytes": 18053781,
+        "sha256": "8e5f3fd597ab27143d508f50b15c205246b19d2c684bd77f37a88c3cbf87ea2a",
+        "content": "BaSeL 3.1: WLBC99/ and PADOVA2000/ directories, each 6 wlbc99_<metallicity>.cor files ([M/H] -2.0 -1.5 -1.0 -0.5 0.0 +0.5) + 12 calibration_<metallicity>.{dw,gi} empirical color tables per variant (dw = dwarf, gi = giant)"
+      },
+      "BaSeL_ReadMe.txt": {
+        "bytes": 2377,
+        "sha256": "e43cd9de4bf21e52f1fdd2e1353b3da1315cf0e9bec24dc5b6a80e5479c576d6",
+        "content": "the author's format description (Kurucz format; flags the flux per-steradian ambiguity)"
+      }
+    },
+    "format_facts": [
+      "one ASCII file per metallicity; all spectra of the file share one wavelength grid stated once at the top: 1221 points in nm (FORTRAN 8f10.1), 9.1 nm to 160000 nm, IDENTICAL across every file of both versions",
+      "one 176-line block per spectrum: parameter line (2i6, 4f6.2) = spectrum number, Teff, log g, [Fe/H], plus two columns the author marks unused (published values are 0.0 or 2.0 and 0.0 or 1.25); then 175 lines of 1221 flux values (7e11.4)",
+      "stated flux unit erg/s/cm/cm/Hz; bolometric closure of the published numbers (integral over frequency = sigma T^4 / 4 pi to 0.1-0.5% for Teff 5000-50000 K, 0.5% residue at 2000 K, both versions and both variants) pins it as the Eddington flux per steradian — surface flux = 4 pi H. The papers pin the bolometric integral to the effective-temperature definition and the author's ReadMe flags the 4pi ambiguity; neither states the steradian convention — the files themselves are the decisive evidence",
+      "the per-metallicity (Teff, log g) node sets DIFFER (3.1: 450-459 blocks per file; 2.2: 375-467), so the 3-axis (Teff, log g, [M/H]) grid has large honest holes; BaSeL 2.2 additionally holds 29 blocks whose [Fe/H] column disagrees with the filename's metallicity (p01: 20 blocks stating 0.2; p02: 3 stating 1.0; p03: 6 stating 1.0)"
+    ],
+    "coverage": {
+      "3.1": "Teff 2000-50000 K (68 steps), log g -1.02 to 5.5 (19 values, following dwarf/giant sequences), [M/H] in {-2.0, -1.5, -1.0, -0.5, 0.0, +0.5}",
+      "2.2": "Teff 2000-50000 K, log g -1.02 to 5.5, [M/H] in 19 steps from -5.0 to +1.0"
+    },
+    "channel_history": "the author page answered directly on 2026-11-18 while every VizieR channel for J/A+A/381/524 was dead (CDS CONNECT-timeout, ADAC tree lacks 524, CfA body-error); the author page is the source of record — the author's own distribution"
+  },
+  "references": [
+    "Lejeune, T., Cuisinier, F., & Buser, R. 1998, A&AS 130, 65 (BaSeL 2.2)",
+    "Westera, P., Lejeune, T., Buser, R., Cuisinier, F., & Bruzual A., G. 2002, A&A 381, 524 (BaSeL 3.1)"
+  ]
+}

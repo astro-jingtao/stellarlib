@@ -37,6 +37,65 @@ Physical parameters a library product can carry. The role a parameter plays in a
 | `spectral_resolution` | — | resolving power R = lambda / dlambda | the instrumental broadening the published sampling encodes |
 | `composition` | — | the library's own composition tag, verbatim | composition selector of a per-composition product (TLUSTY tags) |
 
+## basel (`basel`)
+
+Field mapping version: `1`.
+
+- Semi-empirical library: theoretical SEDs (Kurucz ATLAS9, plus Fluks/HD M giants and hotter-star extensions) recalibrated onto empirical color-temperature relations; the recalibration conserves each model's bolometric flux (verified on the published numbers: closure to 0.1-0.5%).
+- The published flux is the Eddington flux H_nu per steradian (erg/s/cm^2/Hz/sr) — settled by the bolometric closure of the files themselves (the author's ReadMe flags the 4pi ambiguity; the numbers resolve it). The unified layer converts f_nu to the per-Angstrom convention: H_lambda = f_nu * c / lambda^2, surface flux F_lambda = 4 pi H_lambda.
+- Native wavelength is nm on the library's one shared 1221-point grid (9.1 nm - 160000 nm), identical in every file of both versions; never resampled, never converted in the native layer.
+- BaSeL 3.1 publishes two calibration variants (WLBC99, PADOVA2000) with DIFFERENT fluxes at the same nodes; one grid serves exactly one variant, stated on the identity and in the set notes. The paper frames them as tools for different applications, so there is no default: WLBC99 consistently matches empirical colour-temperature relations (individual-star work); PADOVA2000 reproduces globular-cluster colour-magnitude diagrams when combined with Padova 2000 isochrones (population synthesis), at the price of consistency with empirical Te-colour relations — its model temperatures are to be treated with scepticism (giant-branch Te deviations up to ~500 K). At solar metallicity the two nearly coincide (same calibration file; only the Te-log g relation differs), and the [M/H] = +0.5 file is BaSeL 2.2 unmodified in both.
+- The 3-axis (Teff, log g, [M/H]) grid has large honest holes: each metallicity file publishes its own (Teff, log g) node set (per-file counts 450-459 in 3.1, 375-467 in 2.2). Holes are reported, never filled; interp='voronoi' is the hole-tolerant query path.
+- BaSeL 2.2 holds 29 blocks whose [Fe/H] parameter column disagrees with the filename's metallicity; the FILE names the node's metallicity (the library's own partition) and every mismatch is recorded per node and in the set notes — never relabeled.
+- Coverage: Teff 2000-50000 K, log g -1.02 to 5.5 (dwarf/giant sequences), [M/H] -2.0..+0.5 (3.1, 6 values) or -5.0..+1.0 (2.2, 19 values).
+
+### 3.1 (`3.1`)
+
+#### Field mappings
+
+| Unified field | Native source | Origin | Transformation | Notes |
+|---|---|---|---|---|
+| `wavelength` | `wavelength` | transformed_native | x * 10 | the file header's shared grid, nm converted to Angstrom |
+| `wavelength_um` | `wavelength` | transformed_native | x * 1e-3 | the shared grid in micron |
+| `eddington_flux` | `flux` | transformed_native | x * c / lambda_nm^2 / 10 | the published f_nu per steradian converted to H_lambda per Angstrom per steradian |
+| `surface_flux` | `flux` | transformed_native | 4 pi * x * c / lambda_nm^2 / 10 | F_lambda = 4 pi H_lambda per Angstrom (the closure-verified reading of the published f_nu) |
+| `continuum` | — | missing | — | BaSeL publishes recalibrated SEDs only; no continuum column exists |
+
+#### Physical parameters
+
+| Parameter | Role | Value / source | Notes |
+|---|---|---|---|
+| `teff` | axis (varies across the published grid) | file values `teff` | — |
+| `log_surface_gravity` | axis (varies across the published grid) | file values `logg` | — |
+| `m_h` | axis (varies across the published grid) | file values `m_h` | from the filename's metallicity token (the library's own one-file-per-metallicity partition) |
+| `spectral_resolution` | implicit (used by the model, not recoverable) | — | broadband SED grid: 1221 points over 9.1 nm - 160000 nm, no instrumental broadening; not a selectable axis |
+
+### 2.2 (`2.2`)
+
+#### Field mappings
+
+| Unified field | Native source | Origin | Transformation | Notes |
+|---|---|---|---|---|
+| `wavelength` | `wavelength` | transformed_native | x * 10 | the file header's shared grid, nm converted to Angstrom |
+| `wavelength_um` | `wavelength` | transformed_native | x * 1e-3 | the shared grid in micron |
+| `eddington_flux` | `flux` | transformed_native | x * c / lambda_nm^2 / 10 | the published f_nu per steradian converted to H_lambda per Angstrom per steradian |
+| `surface_flux` | `flux` | transformed_native | 4 pi * x * c / lambda_nm^2 / 10 | F_lambda = 4 pi H_lambda per Angstrom (the closure-verified reading of the published f_nu) |
+| `continuum` | — | missing | — | BaSeL publishes recalibrated SEDs only; no continuum column exists |
+
+#### Physical parameters
+
+| Parameter | Role | Value / source | Notes |
+|---|---|---|---|
+| `teff` | axis (varies across the published grid) | file values `teff` | — |
+| `log_surface_gravity` | axis (varies across the published grid) | file values `logg` | — |
+| `m_h` | axis (varies across the published grid) | file values `m_h` | from the filename's metallicity token (the library's own one-file-per-metallicity partition) |
+| `spectral_resolution` | implicit (used by the model, not recoverable) | — | broadband SED grid: 1221 points over 9.1 nm - 160000 nm, no instrumental broadening; not a selectable axis |
+
+### Scientific references
+
+- Lejeune, T., Cuisinier, F., & Buser, R. 1998, A&AS 130, 65 (bibcode `1998A&AS..130...65L`)
+- Westera, P., Lejeune, T., Buser, R., Cuisinier, F., & Bruzual A., G. 2002, A&A 381, 524 (bibcode `2002A&A...381..524W`)
+
 ## BOSZ 2024 (`bosz`)
 
 Field mapping version: `1`.

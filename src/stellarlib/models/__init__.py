@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Callable
 
 from stellarlib.exceptions import SourceUnavailableError, UnsupportedModelError
+from stellarlib.models.basel.backend import read_basel
+from stellarlib.models.basel.reader import recognize_basel
 from stellarlib.models.bosz.backend import read_bosz
 from stellarlib.models.bosz.reader import recognize_bosz
 from stellarlib.models.miles.backend import read_miles
@@ -27,13 +29,17 @@ __all__ = ["BACKENDS", "catalog", "get_backend", "parse_model_spec", "register_b
 class Backend:
     """One library family's entry in the registry."""
 
-    def __init__(self, name: str, recognize: Callable, read: Callable):
+    def __init__(
+        self, name: str, recognize: Callable, read: Callable
+    ) -> None:
+        """Hold one family's sniffer and reader."""
         self.name = name
         self.recognize = recognize
         self.read = read
 
 
 BACKENDS: dict[str, Backend] = {
+    "basel": Backend(name="basel", recognize=recognize_basel, read=read_basel),
     "bosz": Backend(name="bosz", recognize=recognize_bosz, read=read_bosz),
     "tlusty": Backend(name="tlusty", recognize=recognize_tlusty, read=read_tlusty),
     "miles": Backend(name="miles", recognize=recognize_miles, read=read_miles),
@@ -42,6 +48,7 @@ BACKENDS: dict[str, Backend] = {
 
 
 def get_backend(name: str) -> Backend:
+    """One family's registry entry; unknown names list the known families."""
     try:
         return BACKENDS[name.lower()]
     except KeyError:

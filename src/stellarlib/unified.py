@@ -12,6 +12,7 @@ filename's Teff token).
 from __future__ import annotations
 
 from collections.abc import Mapping
+import contextlib
 from typing import Any, Callable
 import warnings
 
@@ -26,11 +27,39 @@ from stellarlib.native import NativeSpectrum
 __all__ = ["TRANSFORMATIONS", "UnifiedView"]
 
 # Transformations are a fixed, named vocabulary — never free-form code.
-# A FieldSpec's `transformation` string must be one of these.
-TRANSFORMATIONS: dict[str, Callable[[np.ndarray], np.ndarray]] = {
-    "4 pi * x": lambda a: 4.0 * np.pi * a,
-    "x * 1e-4": lambda a: a * 1.0e-4,
-    "10 ** x": lambda a: np.power(10.0, a),
+# A FieldSpec's `transformation` string must be one of these. Every entry
+# takes (values, native): constant conversions ignore the native spectrum,
+# wavelength-dependent ones (a per-Hz to per-wavelength unit bridge) read
+# the native wavelength array from it.
+_SPEED_OF_LIGHT_NM_S = 2.99792458e17  # nm/s
+
+
+def _fnu_per_hz_to_flambda_per_angstrom(
+    values: np.ndarray, native: NativeSpectrum
+) -> np.ndarray:
+    """f_nu [per Hz] -> f_lambda [per Angstrom], lambda in nm natively.
+
+    f_lambda = f_nu * c / lambda^2 with lambda in nm; the / 10 converts
+    the per-nm density to the per-Angstrom density (1 nm = 10 Angstrom).
+    """
+    if native.wavelength is None:
+        raise WavelengthGridError(
+            "the f_nu -> f_lambda conversion needs the native wavelength "
+            "array, which this product's files do not carry"
+        )
+    return values * _SPEED_OF_LIGHT_NM_S / np.asarray(native.wavelength) ** 2 / 10.0
+
+
+TRANSFORMATIONS: dict[str, Callable[[np.ndarray, NativeSpectrum], np.ndarray]] = {
+    "4 pi * x": lambda a, _native: 4.0 * np.pi * a,
+    "x * 1e-4": lambda a, _native: a * 1.0e-4,
+    "10 ** x": lambda a, _native: np.power(10.0, a),
+    "x * 10": lambda a, _native: a * 10.0,
+    "x * 1e-3": lambda a, _native: a * 1.0e-3,
+    "x * c / lambda_nm^2 / 10": _fnu_per_hz_to_flambda_per_angstrom,
+    "4 pi * x * c / lambda_nm^2 / 10": lambda a, native: (
+        4.0 * np.pi * _fnu_per_hz_to_flambda_per_angstrom(a, native)
+    ),
 }
 
 
@@ -51,7 +80,8 @@ class UnifiedView:
         computations: Mapping[str, Callable[[NativeSpectrum], np.ndarray]]
         | None = None,
         constants: Mapping[str, Any] | None = None,
-    ):
+    ) -> None:
+        """Hold the specs over one native spectrum (nothing computed yet)."""
         self._native = native
         self._specs = dict(field_specs)
         self._computations = dict(computations or {})
@@ -73,9 +103,11 @@ class UnifiedView:
 
     @property
     def field_names(self) -> list[str]:
+        """The view's unified field names."""
         return list(self._specs)
 
     def field_spec(self, name: str) -> FieldSpec:
+        """One field's spec, with a helpful error when absent."""
         try:
             return self._specs[name]
         except KeyError:
@@ -84,9 +116,11 @@ class UnifiedView:
             ) from None
 
     def has_field(self, name: str) -> bool:
+        """Whether the view maps a unified field of this name."""
         return name in self._specs
 
     def __contains__(self, name: str) -> bool:
+        """Field-membership test (``name in view``)."""
         return name in self._specs
 
     def _native_array(self, native_name: str) -> np.ndarray:
@@ -150,12 +184,13 @@ class UnifiedView:
                 ) from None
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", RuntimeWarning)
-                return fn(values)
+                return fn(values, self._native)
         raise NotImplementedError(
             f"origin {spec.origin!r} of field {name!r} is not implemented"
         )
 
     def to_table(self) -> Table:
+        """The unified layer as an astropy Table (specs in the meta)."""
         cols = {}
         meta = {
             "stellarlib_layer": "unified",
@@ -170,9 +205,7 @@ class UnifiedView:
         for name, spec in self._specs.items():
             if name not in table.colnames or spec.unit is None:
                 continue
-            try:
+            # keep the string in meta rather than inventing a unit
+            with contextlib.suppress(ValueError):
                 table[name].unit = u.Unit(spec.unit)
-            except ValueError:
-                # keep the string in meta rather than inventing a unit
-                pass
         return table

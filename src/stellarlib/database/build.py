@@ -26,7 +26,7 @@ already live where their project wants them.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import dataclasses
 from datetime import datetime, timezone
@@ -34,6 +34,7 @@ from fnmatch import fnmatch
 import json
 from pathlib import Path
 import shutil
+import tarfile
 import threading
 from typing import NamedTuple
 
@@ -53,12 +54,20 @@ from stellarlib.database.manifest import (
     read_manifest,
     write_manifest,
 )
-from stellarlib.database.scan import enumerate_designs, scan_database
+from stellarlib.database.scan import ADAPTERS, enumerate_designs, scan_database
 from stellarlib.database.signature_cache import SignatureCache
 from stellarlib.exceptions import SourceUnavailableError
 from stellarlib.integrity import sha256_file
-from stellarlib.models.bosz.reader import recognize_bosz, recognize_wave_grid
-from stellarlib.models.tlusty.reader import recognize_tlusty
+from stellarlib.models.basel.design import BASEL_FILES
+from stellarlib.models.bosz.reader import (
+    parse_filename as parse_bosz_filename,
+    recognize_bosz,
+    recognize_wave_grid,
+)
+from stellarlib.models.miles.reader import PARAMS_NAME_RE as miles_params_name, recognize_miles
+from stellarlib.models.stelib.reader import TABLE_NAME, recognize_stelib_fits
+from stellarlib.models.tlusty.backend import _infer_release
+from stellarlib.models.tlusty.reader import parse_filename, recognize_tlusty
 from stellarlib.registry import references
 
 __all__ = [
@@ -139,6 +148,7 @@ def _format_of(family: str) -> str:
         "tlusty": "tlusty_vis",
         "miles": "miles_fits",
         "stelib": "stelib_fits",
+        "basel": "basel_cor",
     }[family]
 
 
@@ -152,10 +162,11 @@ def _build_product(
     design: ProductDesign,
     adapter: FamilyAdapter,
     root: Path,
-    session,
-    log,
+    *,
+    session: requests.Session | None,
+    log: Callable[[str], None],
     workers: int = 1,
-    session_factory=None,
+    session_factory: Callable[[], requests.Session] | None = None,
     cache: SignatureCache | None = None,
 ) -> None:
     """Complete one product: expand the design, fetch missing parts, and
@@ -242,7 +253,9 @@ def _build_product(
 
     _record.arrived = 0
 
-    def _fetch_one(pending_item, session_of):
+    def _fetch_one(
+        pending_item: tuple, session_of: Callable[[], requests.Session]
+    ) -> tuple:
         current, _verdict, part = pending_item
         log(f"  fetch {part.name}")
         entry = dict(
@@ -252,7 +265,7 @@ def _build_product(
         )
         return part, entry
 
-    def _fetch_all(pending) -> bool:
+    def _fetch_all(pending: list) -> bool:
         nonlocal design
         if workers <= 1:
             for pending_item in pending:
@@ -269,13 +282,13 @@ def _build_product(
             return False
         return _fetch_all_parallel(pending)
 
-    def _fetch_all_parallel(pending) -> bool:
+    def _fetch_all_parallel(pending: list) -> bool:
         nonlocal design
         abort = threading.Event()
         local = threading.local()
         created: list = []
 
-        def worker_session():
+        def worker_session() -> requests.Session:
             own = getattr(local, "session", None)
             if own is None:
                 own = (
@@ -287,7 +300,7 @@ def _build_product(
                 local.session = own
             return own
 
-        def fetch_or_abort(pending_item):
+        def fetch_or_abort(pending_item: tuple) -> tuple:
             if abort.is_set():
                 raise SourceUnavailableError(
                     f"{pending_item[2].name}: fetch batch aborted after an "
@@ -345,7 +358,7 @@ def _build_product(
         cache.save_if_dirty()
 
 
-def _apply_select(names, patterns: list[str] | None):
+def _apply_select(names: Iterable[str], patterns: list[str] | None) -> list[str]:
     """Filter product names by glob patterns over their paths.
 
     A pattern that matches no declared product is an error — a typo'd
@@ -365,13 +378,14 @@ def _apply_select(names, patterns: list[str] | None):
 
 def build_database(
     database: str | Path,
+    *,
     declarations: Iterable[dict] | None = None,
-    session=None,
+    session: requests.Session | None = None,
     dry_run: bool = False,
     select: Iterable[str] | None = None,
-    log=print,
+    log: Callable[[str], None] = print,
     workers: int = 1,
-    session_factory=None,
+    session_factory: Callable[[], requests.Session] | None = None,
 ) -> Database | None:
     """Build (or complete) a local database against its blueprint.
 
@@ -485,8 +499,6 @@ def build_database(
     cache = SignatureCache(root)
     report = scan_database(root, signature_cache=cache)
 
-    from stellarlib.database.scan import ADAPTERS
-
     own_session = False
     if session is None:
         # one session reused across the whole sequential build: a
@@ -502,7 +514,8 @@ def build_database(
             product = by_name[name]
             adapter = ADAPTERS[product.design.family]
             _build_product(
-                product.design, adapter, root, session, log,
+                product.design, adapter, root,
+                session=session, log=log,
                 workers=workers, session_factory=session_factory,
                 cache=cache,
             )
@@ -528,6 +541,7 @@ class ProductVerification:
 
     @property
     def state(self) -> str:
+        """absent / incomplete / complete, from the part verdicts."""
         if self.directory is None:
             return "absent"
         if self.missing == 0 and not self.nonconforming:
@@ -543,6 +557,7 @@ class VerifyReport:
     products: tuple[ProductVerification, ...]
 
     def to_dict(self) -> dict:
+        """The report as a JSON-ready mapping."""
         return {
             "root": str(self.root),
             "products": [
@@ -626,7 +641,8 @@ def _verify_product(
     design: ProductDesign,
     adapter: FamilyAdapter,
     root: Path,
-    log,
+    *,
+    log: Callable[[str], None],
     cache: SignatureCache,
     workers: int = 1,
 ) -> ProductVerification:
@@ -702,7 +718,7 @@ def verify_database(
     database: str | Path,
     select: Iterable[str] | None = None,
     workers: int = 1,
-    log=print,
+    log: Callable[[str], None] = print,
 ) -> VerifyReport:
     """One full-integrity pass over a database, against its blueprint.
 
@@ -782,6 +798,7 @@ def register_local_product(
     family: str,
     label: str,
     files: Iterable[str | Path],
+    *,
     note: str,
     copy: bool = True,
 ) -> ProductRecord:
@@ -802,31 +819,46 @@ def register_local_product(
         raise ValueError("files must not be empty")
 
     if family == "bosz":
-        recognized = lambda p: recognize_bosz(p) or recognize_wave_grid(p)
+        def recognized(p: Path) -> bool:
+            return recognize_bosz(p) or recognize_wave_grid(p)
         collection = _bosz_collection(path_list)
         release = "2024"
     elif family == "tlusty":
-        recognized = lambda p: recognize_tlusty(p) or p.name.endswith(".tar")
+        def recognized(p: Path) -> bool:
+            return recognize_tlusty(p) or p.name.endswith(".tar")
         collection = _tlusty_release(path_list)
         release = collection
     elif family == "miles":
-        from stellarlib.models.miles.reader import (
-            PARAMS_NAME_RE as miles_params_name,
-            recognize_miles,
-        )
-
-        recognized = lambda p: recognize_miles(p) or miles_params_name.match(p.name) is not None
+        def recognized(p: Path) -> bool:
+            return (
+                recognize_miles(p)
+                or miles_params_name.match(p.name) is not None
+            )
         collection = "library"
         release = "2011"
     elif family == "stelib":
-        from stellarlib.models.stelib.reader import TABLE_NAME, recognize_stelib_fits
-
         _tree_top = (TABLE_NAME, "ReadMe", "stelib.ps.gz")
-        recognized = (
-            lambda p: recognize_stelib_fits(p) or p.name in _tree_top
-        )
+
+        def recognized(p: Path) -> bool:
+            return recognize_stelib_fits(p) or p.name in _tree_top
+
         collection = "library"
         release = "2003"
+    elif family == "basel":
+        _basel_key = {info["archive"]: key for key, info in BASEL_FILES.items()}
+
+        def recognized(p: Path) -> bool:
+            return p.name in _basel_key
+
+        keys = {_basel_key[p.name] for p in path_list if p.name in _basel_key}
+        if len(keys) != 1:
+            raise ValueError(
+                "one basel product holds one published file (a version "
+                f"tarball or the ReadMe); found {sorted(keys)}"
+            )
+        key = keys.pop()
+        collection = key if key != "readme" else "format"
+        release = collection
     else:
         raise ValueError(f"unknown family {family!r}")
 
@@ -885,9 +917,7 @@ def _bosz_collection(files: list[Path]) -> str:
     for p in files:
         if recognize_wave_grid(p):
             continue
-        from stellarlib.models.bosz.reader import WAVE_FILENAME_RE, parse_filename
-
-        facts = parse_filename(p.name)
+        facts = parse_bosz_filename(p.name)
         resolutions.add(facts["resolution"])
     if len(resolutions) != 1:
         raise ValueError(
@@ -900,11 +930,6 @@ def _tlusty_release(files: list[Path]) -> str:
     """Infer the release from the kind-7 spectra held (files or tar
     members); kind-17 continuum files ride along in every set and carry
     no release-discriminating Teff the kind-7 files do not."""
-    import tarfile
-
-    from stellarlib.models.tlusty.backend import _infer_release
-    from stellarlib.models.tlusty.reader import parse_filename, recognize_tlusty
-
     teffs = []
     for p in files:
         if p.name.endswith(".tar"):
@@ -932,10 +957,6 @@ def _tlusty_release(files: list[Path]) -> str:
 
 def _local_section(family: str, files: list[Path]) -> dict:
     if family == "tlusty":
-        import tarfile
-
-        from stellarlib.models.tlusty.reader import parse_filename, recognize_tlusty
-
         compositions = set()
         for p in files:
             if p.name.endswith(".tar"):

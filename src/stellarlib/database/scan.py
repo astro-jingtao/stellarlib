@@ -21,7 +21,9 @@ from stellarlib.database.design import (
     ProductDesign,
     VerdictKind,
 )
+from stellarlib.database.manifest import read_manifest
 from stellarlib.database.signature_cache import SignatureCache
+from stellarlib.models.basel.design import BASEL_ADAPTER
 from stellarlib.models.bosz.design import BOSZ_ADAPTER
 from stellarlib.models.miles.design import MILES_ADAPTER
 from stellarlib.models.stelib.design import STELIB_ADAPTER
@@ -36,6 +38,7 @@ __all__ = [
 ]
 
 ADAPTERS: dict[str, FamilyAdapter] = {
+    "basel": BASEL_ADAPTER,
     "bosz": BOSZ_ADAPTER,
     "tlusty": TLUSTY_ADAPTER,
     "miles": MILES_ADAPTER,
@@ -45,6 +48,7 @@ ADAPTERS: dict[str, FamilyAdapter] = {
 
 @dataclasses.dataclass(frozen=True)
 class ProductReport:
+    """One designed product's scan: its design, state, and verdicts."""
     design: ProductDesign
     state: str  # "complete" | "incomplete"
     verdicts: tuple[PartVerdict, ...]
@@ -52,9 +56,11 @@ class ProductReport:
 
     @property
     def label_path(self) -> str:
+        """The product's directory path relative to the root."""
         return self.design.directory_name
 
     def incomplete_summary(self) -> str:
+        """The failing verdicts' one-line states, for report lines."""
         bad = [v for v in self.verdicts if v.kind != VerdictKind.OK]
         return "; ".join(v.summary for v in bad[:6]) + (
             f" (+{len(bad) - 6} more)" if len(bad) > 6 else ""
@@ -63,14 +69,17 @@ class ProductReport:
 
 @dataclasses.dataclass(frozen=True)
 class DatabaseReport:
+    """A whole database's two-state scan result."""
     root: Path
     products: tuple[ProductReport, ...]
     unregistered: tuple[str, ...]
 
     def products_by_state(self, state: str) -> tuple[ProductReport, ...]:
+        """The products in one state ('complete'/'incomplete')."""
         return tuple(p for p in self.products if p.state == state)
 
     def missing_part_count(self) -> int:
+        """How many parts the builder could still fetch."""
         return sum(
             1
             for p in self.products
@@ -79,6 +88,7 @@ class DatabaseReport:
         )
 
     def nonconforming_parts(self) -> list[PartVerdict]:
+        """The parts whose integrity failed (human decision)."""
         return [
             v
             for p in self.products
@@ -87,6 +97,7 @@ class DatabaseReport:
         ]
 
     def to_dict(self) -> dict:
+        """The report as a JSON-ready mapping."""
         return {
             "root": str(self.root),
             "products": [
@@ -104,6 +115,7 @@ class DatabaseReport:
         }
 
     def render_markdown(self) -> str:
+        """The report as the db_status.md document."""
         lines = [
             "# stellarlib database status",
             "",
@@ -217,7 +229,6 @@ def scan_database(
     ``SignatureCache(root, writable=False)`` for a scan that must write
     nothing (dry-run planning).
     """
-    from stellarlib.database.manifest import read_manifest
 
     root = Path(database)
     if not root.is_dir():
@@ -278,7 +289,7 @@ def scan_database(
         )
         registered.add(relative)
 
-    for name, (design, adapter) in designs.items():
+    for name, (design, _adapter) in designs.items():
         if name in registered:
             continue
         verdicts = tuple(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from astropy import units as u
 import numpy as np
 import pytest
 
@@ -12,11 +13,11 @@ from stellarlib.unified import TRANSFORMATIONS, UnifiedView
 
 
 def _native(**overrides) -> NativeSpectrum:
-    kwargs = dict(
-        wavelength=np.linspace(1000.0, 2000.0, 6),
-        flux=np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]),
-        continuum=np.array([1.1, 2.1, 3.1, 4.1, 5.1, 6.1]),
-    )
+    kwargs = {
+        "wavelength": np.linspace(1000.0, 2000.0, 6),
+        "flux": np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]),
+        "continuum": np.array([1.1, 2.1, 3.1, 4.1, 5.1, 6.1]),
+    }
     kwargs.update(overrides)
     return NativeSpectrum(**kwargs)
 
@@ -55,18 +56,51 @@ def _specs(**overrides) -> dict:
 
 class TestTransformations:
     def test_fixed_vocabulary_values(self):
+        native = _native()
         np.testing.assert_allclose(
-            TRANSFORMATIONS["4 pi * x"](np.array([1.0, 2.0])),
+            TRANSFORMATIONS["4 pi * x"](np.array([1.0, 2.0]), native),
             4.0 * np.pi * np.array([1.0, 2.0]),
         )
         np.testing.assert_allclose(
-            TRANSFORMATIONS["x * 1e-4"](np.array([1000.0])),
+            TRANSFORMATIONS["x * 1e-4"](np.array([1000.0]), native),
             [0.1],
         )
         np.testing.assert_allclose(
-            TRANSFORMATIONS["10 ** x"](np.array([2.0])),
+            TRANSFORMATIONS["10 ** x"](np.array([2.0]), native),
             [100.0],
         )
+        np.testing.assert_allclose(
+            TRANSFORMATIONS["x * 10"](np.array([9.1]), native),
+            [91.0],
+        )
+        np.testing.assert_allclose(
+            TRANSFORMATIONS["x * 1e-3"](np.array([9.1]), native),
+            [0.0091],
+        )
+
+    def test_fnu_to_flambda_bridge(self):
+        # f_nu [per Hz] -> f_lambda [per Angstrom], wavelength in nm:
+        # f_lambda = f_nu * c / lambda^2 / 10 at the native grid
+        nm_native = NativeSpectrum(
+            wavelength=np.array([100.0, 200.0]), flux=np.array([1.0, 1.0])
+        )
+        c_nm = 2.99792458e17
+        expected = 1.0 * c_nm / np.array([100.0, 200.0]) ** 2 / 10.0
+        np.testing.assert_allclose(
+            TRANSFORMATIONS["x * c / lambda_nm^2 / 10"](
+                np.array([1.0, 1.0]), nm_native
+            ),
+            expected,
+        )
+        np.testing.assert_allclose(
+            TRANSFORMATIONS["4 pi * x * c / lambda_nm^2 / 10"](
+                np.array([1.0, 1.0]), nm_native
+            ),
+            4.0 * np.pi * expected,
+        )
+        blind = NativeSpectrum(wavelength=None, flux=np.array([1.0]))
+        with pytest.raises(WavelengthGridError):
+            TRANSFORMATIONS["x * c / lambda_nm^2 / 10"](blind.flux, blind)
 
 
 class TestUnifiedView:
@@ -133,7 +167,6 @@ class TestToTable:
     def test_materializes_with_units_and_meta(self):
         view = UnifiedView(_native(), _specs())
         table = view.to_table()
-        from astropy import units as u
 
         assert "surface_flux" in table.colnames
         assert "continuum" in table.colnames
