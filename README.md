@@ -5,9 +5,10 @@ Faithful and unified access to published stellar spectral libraries.
 stellarlib is a provenance-first, model-agnostic Python interface for reading,
 preserving, standardizing, and querying tabulated stellar spectra —
 model-atmosphere flux grids published on (Teff, log g, [M/H], ...) parameter
-nodes (BOSZ 2024, TLUSTY OSTAR2002/BSTAR2006) and empirical libraries of
-observed stars (MILES, STELIB), each under a query contract faithful to
-what the data actually is.
+nodes (BOSZ 2024, TLUSTY OSTAR2002/BSTAR2006), the semi-empirical BaSeL
+SED libraries (2.2 and 3.1), and empirical libraries of observed stars
+(MILES, STELIB), each under a query contract faithful to what the data
+actually is.
 
 **Status: early development (v0.1.0).** The public API may still change.
 
@@ -18,6 +19,9 @@ In scope, for the initial release:
 - **BOSZ 2024** (MAST HLSP, resampled text products at several resolutions).
 - **TLUSTY OSTAR2002 / BSTAR2006** (tlusty.oca.eu, `*.vis.7.gz` optical
   spectra).
+- **BaSeL 2.2 / 3.1** (the author's page at UFABC; semi-empirical SEDs —
+  theoretical spectra recalibrated onto empirical photometry; 3.1 ships
+  two calibration variants, one grid serves one).
 - **MILES** (research.iac.es, the 985-star empirical library: official FITS
   package + parameter table; relative flux, nearest-star queries).
 - **STELIB** (VizieR III/232, the 255-star empirical library: the whole
@@ -50,6 +54,97 @@ Development install with test dependencies:
 ```
 pip install -e .[test]
 ```
+
+## What you are holding: three levels, always explicit
+
+stellarlib never silently decides how processed your data is. Every
+spectrum can be reached at three levels, and the level is stated by the
+code you write — for a scientific application the difference matters:
+the native layer is what the authors published, the unified layer is
+that data under one vocabulary, the interpolated layer is a derived
+product stellarlib computed for you.
+
+### 1. Native — the published numbers, verbatim
+
+Every spectrum object carries `spec.native`: the numeric arrays exactly
+as the upstream file holds them, its verbatim header, and the metadata
+the filename or header states.
+
+```python
+spec.native.flux             # the flux column, exactly as parsed
+spec.native.wavelength       # or None where the file carries no wavelength column
+spec.to_table(layer="native")  # astropy Table, units = the published convention
+```
+
+Nothing is renamed, converted, clipped, or filled at this level — and
+where a published format is odd, the oddity is preserved and recorded
+in the set's notes: BOSZ resampled files carry no wavelength column at
+all (the grid lives in a separate sidecar file; pairing it is an
+explicit, recorded step), BaSeL publishes wavelength in nm and flux per
+Hz per steradian, and 29 BaSeL 2.2 spectra declare a metallicity in
+their parameter line that contradicts the file they live in. `native`
+shows you exactly that.
+
+### 2. Unified — one field vocabulary over the native arrays
+
+`spec.unified["surface_flux"]` (or the matching attribute,
+`spec.surface_flux`) maps the native arrays onto a fixed vocabulary —
+`wavelength` (Angstrom), `wavelength_um`, `eddington_flux` (H),
+`surface_flux` (F = 4·pi·H), `continuum`, and the empirical-only
+`observed_flux` fields. Each unified field is exactly one of three
+things:
+
+- **the native array itself** under its published name, when the
+  library already publishes it in the vocabulary's unit (TLUSTY
+  publishes H_lambda per Angstrom: `eddington_flux` is native);
+- **a unit bridge from a closed vocabulary** — `4 pi * x`,
+  `x * 1e-4`, the f_nu-to-f_lambda conversion, and a few more; each is
+  a named, implemented transformation, never free-form code. BaSeL's
+  published f_nu per steradian reaches `surface_flux` (per Angstrom)
+  through `4 pi * c / lambda^2` — the per-steradian reading itself was
+  settled by checking the bolometric closure of the published numbers
+  against sigma·T^4;
+- **explicitly absent** (`continuum` for products whose format has no
+  continuum column) — asking for it raises, nothing is synthesized.
+
+The unified layer still holds **one node's published data** — nothing
+has been interpolated. What bridging happened is inspectable, not
+implicit: `spec.field_info("surface_flux")` returns the field's spec
+naming the native column and the transformation, the same statement
+rides in the spectrum's provenance, and every family's full mapping
+table is generated into `docs/unified-parameters.md`.
+
+### 3. Interpolated — a point between nodes, computed on your request
+
+`grid.spectrum(teff=..., log_surface_gravity=..., m_h=...)` answers a
+query between nodes, and the method is an explicit argument:
+
+- an **exact node hit** returns the published spectrum unchanged — no
+  interpolation runs at all (`method="exact-node"` on the record);
+- `interp="multilinear"` (default) is linear in every axis over the
+  bracketing cell's 2^N corner nodes — linear in Teff, log g, [M/H],
+  matching the libraries' own axis labeling. A bracket cell with a
+  missing node raises `GridHoleError` instead of guessing (BaSeL's
+  per-metallicity grids publish different (Teff, log g) node sets, so
+  holes are common there; `grid.holes` lists them);
+- `interp="voronoi"` returns the single nearest published node,
+  grid-step-normalized, with a warning and a record — the
+  hole-tolerant path that never invents data between nodes;
+- out-of-range coordinates raise (`range_policy="strict"`, no
+  extrapolation) or clamp to the edge cell with a warning
+  (`range_policy="clamp"`).
+
+The result is **derived data and says so**: `grid.last_record` carries
+the full `InterpolationRecord` (method, the exact corner nodes and
+their parameter values, the weights, the clamp state), and the returned
+spectrum's provenance names the corner nodes it was built from. The
+same honesty bounds who may be interpolated at all: empirical libraries
+(MILES, STELIB) refuse `multilinear` outright — a weighted mix of two
+arbitrarily-normalized observed stars is not a spectrum of anything —
+and answer with the nearest parameterized star, warned and recorded.
+
+The design reasoning behind these contracts lives in
+`docs/architecture.md`.
 
 ## Quick start
 
@@ -87,6 +182,23 @@ spec = miles.spectrum(teff=4125.0, log_surface_gravity=1.4, m_h=-0.3)
 flux = spec.unified["observed_flux"]     # relative, unitless
 ```
 
+BaSeL opens like the theoretical grids; a 3.1 grid additionally states
+which of the two published calibrations it serves (WLBC99 matches
+empirical colour-temperature relations; PADOVA2000 trades that for
+globular-cluster CMDs with Padova 2000 isochrones — no default, the
+choice is scientific). Its per-metallicity node sets differ, so holes
+are common and `voronoi` is often the right query:
+
+```python
+basel = db.grid("basel/3.1", variant="WLBC99")     # one grid, one calibration
+spec = basel.spectrum(teff=4125.0, log_surface_gravity=3.1, m_h=-0.75,
+                      interp="voronoi")            # warns + names the node used
+flux = spec.unified["surface_flux"]                # F_lambda = 4 pi H_lambda
+```
+
+BaSeL 2.2 needs no variant: `db.grid("basel/2.2")` serves the whole
+19-metallicity library (8,315 nodes, holes reported as everywhere).
+
 The raw corner mechanism (corner order and flat indices exactly as the
 downstream sparse-matrix consumers expect) and the merged array block are
 both available:
@@ -111,7 +223,8 @@ whole unit at a time (`dry_run` first):
 ```python
 stellarlib.build_database("my-db", dry_run=True,
     declarations=[dict(family="bosz"), dict(family="tlusty"),
-                  dict(family="miles"), dict(family="stelib")])
+                  dict(family="basel"), dict(family="miles"),
+                  dict(family="stelib")])
 db = stellarlib.open_database("my-db")
 ```
 
