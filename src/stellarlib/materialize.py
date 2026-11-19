@@ -13,13 +13,17 @@ would have to invent rows for missing nodes.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 import dataclasses
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
+from stellarlib import __version__
+from stellarlib.core import ModelIdentity
 from stellarlib.exceptions import GridHoleError, WavelengthGridError
 from stellarlib.grid import SpectrumGrid
 from stellarlib.integrity import sha256_file
@@ -63,7 +67,7 @@ def materialize_grid(
     axes_values = [np.asarray(v, dtype=np.float64) for v in grid.axes.values()]
     shape = tuple(a.size for a in axes_values)
     n_wave = None
-    flux_block = np.zeros(shape + (0,), dtype=np.float64)
+    flux_block = np.zeros((*shape, 0), dtype=np.float64)
     sources = []
     identity = grid.identity
     for flat_index in range(int(np.prod(shape))):
@@ -81,9 +85,9 @@ def materialize_grid(
         if n_wave is None:
             n_wave = native.wavelength.size
             wavelength = np.asarray(native.wavelength, dtype=np.float64)
-            flux_block = np.zeros(shape + (n_wave,), dtype=np.float64)
+            flux_block = np.zeros((*shape, n_wave), dtype=np.float64)
             continuum_block = (
-                np.zeros(shape + (n_wave,), dtype=np.float64)
+                np.zeros((*shape, n_wave), dtype=np.float64)
                 if include_continuum
                 else None
             )
@@ -114,9 +118,7 @@ def materialize_grid(
 
     npz_path = Path(str(path).removesuffix(".npz") + ".npz")
     npz_path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {
-        name: values for name, values in zip(grid.selectable, axes_values)
-    }
+    payload = dict(zip(grid.selectable, axes_values))
     payload["wavelength"] = wavelength
     payload["flux"] = flux_block
     if include_continuum and has_continuum:
@@ -144,7 +146,6 @@ def materialize_grid(
 
 
 def _stellarlib_version() -> str:
-    from stellarlib import __version__
 
     return __version__
 
@@ -161,8 +162,8 @@ class MaterializedGrid:
     continuum: np.ndarray | None
 
     @property
-    def identity(self):
-        from stellarlib.core import ModelIdentity
+    def identity(self) -> ModelIdentity:
+        """The materialized grid's identity (from the sidecar)."""
 
         return ModelIdentity.from_dict(self.sidecar["identity"])
 
@@ -183,13 +184,14 @@ class MaterializedGrid:
                 problems.append(f"{path}: sha256 changed since materialization")
         return problems
 
-    def corner_weights(self, **queries):
+    def corner_weights(self, **queries: Any) -> tuple:
         """The rectangular corner mechanism over the materialized axes
         (same contract as :meth:`UnifiedSpectra.corner_weights`, flat
         indices pairing with the C-order ravel of the flux block)."""
         return corner_weights(self.axes, **queries)
 
-    def corner_spectrum(self, flat_indices) -> np.ndarray:
+    def corner_spectrum(self, flat_indices: Iterable[int]) -> np.ndarray:
+        """Flux rows of nodes by flat index."""
         return self.flux.reshape(-1, self.wavelength.size)[np.asarray(flat_indices)]
 
 

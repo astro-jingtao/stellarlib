@@ -25,6 +25,7 @@ DOC = REPO_ROOT / "docs" / "unified-parameters.md"
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Generate (or check) the unified-parameters document."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--check",

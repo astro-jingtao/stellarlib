@@ -11,6 +11,7 @@ cite their source.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 import os
 from pathlib import Path
 
@@ -22,9 +23,8 @@ from stellarlib.exceptions import (
     UnrecognizedFormatError,
     WavelengthGridError,
 )
+from stellarlib.models.bosz.design import family_for
 from stellarlib.models.bosz.reader import (
-    FILENAME_RE,
-    WAVE_FILENAME_RE,
     mast_url,
     parse_filename,
     read_resam,
@@ -56,6 +56,7 @@ _SELECTABLE = ("teff", "log_surface_gravity", "m_h")
 
 
 def bosz_identity(facts: dict) -> ModelIdentity:
+    """The identity of one BOSZ selection (release plus physics configuration)."""
     return ModelIdentity(
         family="bosz",
         release="2024",
@@ -65,7 +66,9 @@ def bosz_identity(facts: dict) -> ModelIdentity:
     )
 
 
-def _collect_sources(sources) -> tuple[list[Path], Path | None]:
+def _collect_sources(
+    sources: str | os.PathLike | Iterable[str | os.PathLike],
+) -> tuple[list[Path], Path | None]:
     """Split the input into spectrum files and an optional in-band wave file."""
     if isinstance(sources, (str, os.PathLike)):
         p = Path(sources)
@@ -130,7 +133,7 @@ def _discover_wave_path(
 
 
 def read_bosz(
-    sources,
+    sources: str | os.PathLike | Iterable[str | os.PathLike],
     wave_path: str | os.PathLike | None = None,
     am: float = 0.0,
     cm: float = 0.0,
@@ -155,7 +158,6 @@ def read_bosz(
         raise UnrecognizedFormatError(
             f"no BOSZ 2024 resam files found among {base}"
         )
-    from stellarlib.models.bosz.design import family_for
 
     parsed = []
     for f in spectrum_files:
@@ -249,7 +251,7 @@ def read_bosz(
         ),
     )
     provenance = Provenance(
-        assets=(wave_asset,) + assets,
+        assets=(wave_asset, *assets),
         scientific_references=BOSZ_REFERENCES,
     )
 

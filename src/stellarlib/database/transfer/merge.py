@@ -23,6 +23,7 @@ parts point outside the source database) and are never merged.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 import dataclasses
 import os
 from pathlib import Path
@@ -31,6 +32,7 @@ import uuid
 
 from stellarlib.database.build import _apply_select
 from stellarlib.database.design import VerdictKind
+from stellarlib.database.inventory import refresh_inventory
 from stellarlib.database.manifest import read_manifest, write_manifest
 from stellarlib.database.scan import ProductReport, scan_database
 from stellarlib.database.signature_cache import SignatureCache
@@ -41,6 +43,7 @@ __all__ = ["MergeConflict", "MergeReport", "merge_database"]
 
 @dataclasses.dataclass(frozen=True)
 class MergeConflict:
+    """One part the merge refused to overwrite (recorded, not resolved)."""
     product: str
     part: str
     source_sha: str | None
@@ -68,9 +71,11 @@ class MergeReport:
 
     @property
     def changed(self) -> bool:
+        """Whether the merge added or completed anything."""
         return bool(self.merged_products or self.completed_parts)
 
     def summary(self) -> str:
+        """The merge outcome as one human-readable block."""
         mode = " (verify)" if self.verify else (
             " (no verify — migrated cache entries invalidated)"
         )
@@ -91,12 +96,12 @@ class MergeReport:
             f"{len(self.identity_mismatches)}; cache entries invalidated "
             f"{self.invalidated_cache_entries}"
         )
-        for conflict in self.conflicts:
-            lines.append(
-                f"  conflict {conflict.product}/{conflict.part}: source "
-                f"{conflict.source_sha} vs target {conflict.target_sha} "
-                "(target untouched)"
-            )
+        lines.extend(
+            f"  conflict {conflict.product}/{conflict.part}: source "
+            f"{conflict.source_sha} vs target {conflict.target_sha} "
+            "(target untouched)"
+            for conflict in self.conflicts
+        )
         return "\n".join(lines)
 
 
@@ -121,11 +126,12 @@ def _merge_product(
     source_root: Path,
     target_root: Path,
     staging: Path,
+    *,
     s_report: ProductReport,
     t_report: ProductReport | None,
     report: MergeReport,
     cache: SignatureCache,
-    log,
+    log: Callable[[str], None],
 ) -> None:
     design = s_report.design
     key = design.directory_name
@@ -290,7 +296,7 @@ def merge_database(
     select: list[str] | None = None,
     *,
     verify: bool = False,
-    log=print,
+    log: Callable[[str], None] = print,
 ) -> MergeReport:
     """Import one local database (or any partial copy of one) into
     another, adding what is missing and touching nothing else.
@@ -307,7 +313,6 @@ def merge_database(
     aborts the merge loudly) and seeds the cache with the verified
     answers instead.
     """
-    from stellarlib.database.inventory import refresh_inventory
 
     source = Path(source)
     target = Path(target)
@@ -352,11 +357,11 @@ def merge_database(
                 source,
                 target,
                 staging,
-                s_product,
-                t_index.get(s_product.design.directory_name),
-                report,
-                cache,
-                log,
+                s_report=s_product,
+                t_report=t_index.get(s_product.design.directory_name),
+                report=report,
+                cache=cache,
+                log=log,
             )
         cache.save_if_dirty()
     finally:

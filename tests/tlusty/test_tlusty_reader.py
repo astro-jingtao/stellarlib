@@ -45,7 +45,7 @@ class TestParseFilename:
     def test_rejects_foreign_names(self):
         for name in ("27500_3.00.vis.7.gz", "G27500g300v10.spec.gz"):
             assert FILENAME_RE.match(name) is None
-            with pytest.raises(ValueError):
+            with pytest.raises(ValueError, match="not a TLUSTY"):
                 parse_filename(name)
 
     def test_recognize_with_and_without_suffix(self):

@@ -21,8 +21,6 @@ import gzip
 from pathlib import Path
 import sys
 
-import numpy as np
-
 HERE = Path(__file__).parent
 ROWS = 300
 # r500 grid: 7500 log-uniform points 500 A .. 31.97 um; row 2670 sits

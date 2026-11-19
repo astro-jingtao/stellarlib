@@ -9,6 +9,7 @@ import shutil
 
 import pytest
 
+import stellarlib
 from stellarlib.exceptions import MetadataConflictError
 from stellarlib.facade import MilesSpectra, construct
 from stellarlib.models.miles.backend import read_miles
@@ -149,7 +150,6 @@ class TestFacade:
             construct("miles/2011")
 
     def test_open_grid_on_a_product_layout(self, tmp_path):
-        import stellarlib
 
         shutil.copy2(TAR, tmp_path / TAR.name)
         shutil.copy2(PARAMS, tmp_path / PARAMS.name)

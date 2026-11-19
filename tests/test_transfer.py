@@ -9,10 +9,12 @@ import json
 from pathlib import Path
 import shutil
 
+from file_quick_signature.key import build_key
 import pytest
 
 import stellarlib
 from stellarlib.database.build import register_local_product
+from stellarlib.database.transfer import merge as merge_module
 from stellarlib.database.transfer.export import (
     export_database,
     rsync_command,
@@ -52,7 +54,6 @@ def _cache_entries(db: Path) -> dict:
 def _plant_bogus_entry(db: Path, rel_path: str) -> str:
     """A signature-cache entry for rel_path claiming a wrong hash (the
     stale claim a no-verify merge must invalidate)."""
-    from file_quick_signature.key import build_key
 
     key = build_key(rel_path, 1, 1)
     entries = _cache_entries(db)
@@ -229,7 +230,6 @@ class TestVerifyingMerge:
         assert len(seeded) >= 3  # every hashed part, remembered
 
     def test_verify_aborts_on_sha_mismatch(self, tmp_path, monkeypatch):
-        from stellarlib.database.transfer import merge as merge_module
 
         src = _db(tmp_path / "src")
         _register(src, "hand", COR_A)
@@ -276,7 +276,8 @@ class TestExportVerifyRsync:
         export_database(src, select=["stelib/library/a"])
         intact = shutil.copytree(src, tmp_path / "intact")
         ok = verify_transfer(intact, intact / "export/selection/transfer.json")
-        assert ok.ok and ok.checked_files > 0
+        assert ok.ok
+        assert ok.checked_files > 0
         corrupted = shutil.copytree(src, tmp_path / "corrupted")
         part = corrupted / "stelib/library/a/HD002857_V3.2.fits"
         part.write_bytes(part.read_bytes()[:-8] + b"deadbeef")
@@ -298,7 +299,8 @@ class TestExportVerifyRsync:
         command = rsync_command(src, result.outdir, "host:/dst")
         assert "--files-from=" in command
         assert "files.rsync" in command
-        assert str(src) in command and "host:/dst" in command
+        assert str(src) in command
+        assert "host:/dst" in command
 
     def test_public_api_reexports(self):
         for name in (

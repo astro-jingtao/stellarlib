@@ -16,9 +16,12 @@ import dataclasses
 from pathlib import Path
 from typing import Any, Callable
 
+from astropy.table import Table
+
 from stellarlib.core import FieldSpec, ModelIdentity, ParameterSpec
 from stellarlib.native import NativeSpectrum
 from stellarlib.provenance import Provenance
+from stellarlib.unified import UnifiedView
 
 __all__ = ["GridNode", "Spectrum", "SpectrumSet"]
 
@@ -46,9 +49,11 @@ class GridNode:
 
     @property
     def filename(self) -> str:
+        """The node's file name (the tar member name for archive sets)."""
         return self.path.name
 
     def key(self, selectable: Iterable[str]) -> tuple:
+        """The node's coordinate tuple in the given selectable order."""
         return tuple(self.coordinates[name] for name in selectable)
 
 
@@ -65,13 +70,15 @@ class Spectrum:
     def __init__(
         self,
         native: NativeSpectrum,
+        *,
         identity: ModelIdentity,
         parameters: tuple[ParameterSpec, ...] = (),
         field_specs: Mapping[str, FieldSpec] | None = None,
         provenance: Provenance | None = None,
         selection: Mapping[str, Any] | None = None,
         unified_view: Any = None,
-    ):
+    ) -> None:
+        """Hold one node's layers; built by backends, not by users."""
         self._native = native
         self.identity = identity
         self.parameters = tuple(parameters)
@@ -105,10 +112,12 @@ class Spectrum:
 
     @property
     def native(self) -> NativeSpectrum:
+        """The verbatim parsed arrays (the native layer)."""
         return self._native
 
     @property
-    def unified(self):
+    def unified(self) -> UnifiedView:
+        """The unified view over the native arrays."""
         if self._unified_view is None:
             raise AttributeError(
                 "no unified view is attached; the backend that produced this "
@@ -119,6 +128,7 @@ class Spectrum:
     # -- parameter access ----------------------------------------------------
 
     def parameter(self, name: str) -> ParameterSpec:
+        """One parameter's spec by name."""
         for spec in self.parameters:
             if spec.name == name:
                 return spec
@@ -126,11 +136,12 @@ class Spectrum:
 
     # -- unified field access -------------------------------------------------
 
-    def get(self, name: str):
+    def get(self, name: str) -> Any:
         """Unified field values (same as ``self.unified[name]``)."""
         return self.unified[name]
 
     def has_field(self, name: str) -> bool:
+        """Whether the product maps a unified field of this name."""
         return name in self.field_specs
 
     def field_info(self, name: str) -> FieldSpec:
@@ -142,7 +153,7 @@ class Spectrum:
                 f"no unified field {name!r}; available: {sorted(self.field_specs)}"
             ) from None
 
-    def __getattr__(self, name: str):
+    def __getattr__(self, name: str) -> Any:
         # called only when normal attribute lookup fails; expose unified
         # fields as attributes (spec.wavelength, spec.surface_flux, ...)
         specs = object.__getattribute__(self, "field_specs")
@@ -177,7 +188,7 @@ class Spectrum:
 
     # -- export ------------------------------------------------------------
 
-    def to_table(self, layer: str = "unified"):
+    def to_table(self, layer: str = "unified") -> Table:
         """Return the spectrum as a table in the chosen layer.
 
         ``layer="native"`` gives the verbatim arrays (astropy Table with
@@ -213,13 +224,15 @@ class SpectrumSet:
     def __init__(
         self,
         nodes: Iterable[GridNode],
+        *,
         identity: ModelIdentity,
         loader: Callable[[GridNode], Spectrum],
         selectable: tuple[str, ...],
         parameters: tuple[ParameterSpec, ...] = (),
         provenance: Provenance | None = None,
         notes: Mapping[str, Any] | None = None,
-    ):
+    ) -> None:
+        """Index the product's nodes and keep its loader for lazy use."""
         self._nodes = tuple(nodes)
         self.identity = identity
         self.loader = loader
@@ -230,6 +243,7 @@ class SpectrumSet:
 
     @property
     def nodes(self) -> tuple[GridNode, ...]:
+        """The product's index entries, in declaration order."""
         return self._nodes
 
     def load(self, node: GridNode) -> Spectrum:
@@ -239,13 +253,16 @@ class SpectrumSet:
     def __len__(self) -> int:
         return len(self._nodes)
 
-    def __iter__(self):
+    def __iter__(self) -> Any:
+        """Iterate the set's nodes (index entries, not spectra)."""
         return iter(self._nodes)
 
-    def __getitem__(self, idx) -> GridNode:
+    def __getitem__(self, idx: int | slice) -> GridNode:
+        """The node at the given index."""
         return self._nodes[idx]
 
     def parameter(self, name: str) -> ParameterSpec:
+        """One parameter's spec by name."""
         for spec in self.parameters:
             if spec.name == name:
                 return spec

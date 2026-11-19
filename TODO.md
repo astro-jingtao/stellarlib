@@ -3,21 +3,35 @@
 Design and feature work deliberately not yet done. Every item names the
 gap and the constraint any solution must respect; none of these are bugs.
 
-## ruff full-compliance pass — seeded 2026-11-18, remainder deferred
+## ruff full-compliance pass — remainder is the complexity family only
 
-- `ruff.toml` is seeded from the agent baseline template (target py39,
-  src layout); the seeding round applied the safe autofixes only
-  (102 findings: import sorting, `__all__` ordering, quoted-annotation
-  removal, `typing`→`collections.abc` imports) and left 409 findings
-  untouched by user decision, to be cleared in dedicated future rounds.
-- The remainder by family: PLC0415 function-local imports (91 — several
-  are deliberate lazy imports and need per-site judgment, not a sweep),
-  D1xx missing docstrings (~120), ANN00x missing annotations (~100),
-  size/complexity gates (C901/PLR09xx ~40), and a long tail of
-  single-site findings (F401 unused imports are unfixable by config —
-  `__init__.py` re-exports read as unused on purpose).
-- Constraint: findings are fixed in the code, never silenced — rule
-  edits, per-file ignores, and `noqa` each need their own stated reason.
+- The 2026-11-18 seed left 409 findings; the 2026-11-19 sweep cleared
+  383 of them in the code, no rule edits, no `noqa`: the mechanical
+  families (imports, docstrings, annotations, pytest style, redundant
+  constructs) are at zero, including the 96 function-local imports
+  (hoisted; the two same-name parse_filename functions in build.py were
+  disambiguated with an alias).
+- 26 findings remain, all C901/PLR09xx on the same structural theme:
+  long functions and wide signatures in the fetch/merge machinery and
+  the family readers. Solving them is decomposition work, never
+  suppression; the concrete plans:
+  - `_build_product` (complexity 34, 88 statements) — extract the
+    scan/classify pass, the sequential fetch, and the manifest-flush
+    bookkeeping into helpers around the existing nested closures.
+  - `_merge_product` (26, 85) — extract the staged-copy path and the
+    into-existing-product path (they are two policies sharing a
+    prologue).
+  - `register_local_product` (19) — move the per-family branch table
+    (recognizer + collection/release) into a module-level mapping.
+  - `read_bosz`/`read_miles`/`read_stelib` — extract the
+    index/parse/nodes phases like the basel backend already does.
+  - `scan_database`, `corner_weights`, `_validate`, `_spec_from_entry`,
+    `render_documentation`, `build_database`, `_verify_product`,
+    `_fetch_all_parallel` — moderate extractions, same pattern.
+  - `empty_manifest` (10 keyword-only args) and
+    `BoszSpectra.construct` (10) — the arguments ARE the manifest
+    schema / the family's option surface; resolving means a parameter
+    object (a design change to public signatures), decide separately.
 
 ## BOSZ rorig storage and fetch rounds — indefinitely deferred
 

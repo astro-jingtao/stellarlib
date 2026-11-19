@@ -33,6 +33,8 @@ from stellarlib.core import (
     ParameterSource,
     ParameterSpec,
 )
+from stellarlib.provenance import Reference
+from stellarlib.unified import TRANSFORMATIONS
 
 _REGISTRY_FILE = Path(__file__).with_name("unified_parameters.json")
 _MODELS_DIR = Path(__file__).resolve().parent.parent / "models"
@@ -112,11 +114,11 @@ def _validate(reg: dict) -> None:
                         f"unified field {mapping['unified']!r}"
                     )
                 origin = FieldOrigin(mapping["origin"])
-                if origin is FieldOrigin.TRANSFORMED_NATIVE:
-                    from stellarlib.unified import TRANSFORMATIONS
-
-                    if mapping.get("transformation") not in TRANSFORMATIONS:
-                        raise ValueError(
+                if (
+                    origin is FieldOrigin.TRANSFORMED_NATIVE
+                    and mapping.get("transformation") not in TRANSFORMATIONS
+                ):
+                    raise ValueError(
                             f"backend {name!r} product {product_key!r} field "
                             f"{mapping['unified']!r} uses transformation "
                             f"{mapping.get('transformation')!r}, which the "
@@ -168,14 +170,17 @@ def _product(backend: str, product: str) -> dict:
 
 
 def backend_names() -> tuple[str, ...]:
+    """The families that declare registry data."""
     return tuple(_registry()["backends"])
 
 
 def product_names(backend: str) -> tuple[str, ...]:
+    """One family's product keys."""
     return tuple(_backend(backend)["products"])
 
 
 def unified_field_names() -> tuple[str, ...]:
+    """The unified vocabulary's field names."""
     return tuple(f["name"] for f in _registry()["unified_fields"])
 
 
@@ -228,6 +233,7 @@ def field_specs(backend: str, product: str) -> tuple[FieldSpec, ...]:
 
 
 def field_spec_dict(backend: str, product: str) -> dict[str, FieldSpec]:
+    """The product's field specs keyed by field name."""
     return {spec.name: spec for spec in field_specs(backend, product)}
 
 
@@ -331,7 +337,6 @@ def resolve_parameters(
 
 def references(backend: str) -> tuple:
     """The backend family's scientific references (what to cite)."""
-    from stellarlib.provenance import Reference
 
     be = _backend(backend)
     return tuple(Reference(**ref) for ref in be["references"])

@@ -15,8 +15,11 @@ docs/data-sources.md).
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
+import dataclasses
 from pathlib import Path
+
+import requests
 
 from stellarlib.database.design import (
     PartDesign,
@@ -91,6 +94,7 @@ def _library_design() -> ProductDesign:
 
 
 class MilesAdapter:
+    """The MILES family's database adapter: the one official FITS package."""
     family = "miles"
 
     def designs(self, declaration: Mapping) -> Iterable[ProductDesign]:
@@ -102,19 +106,19 @@ class MilesAdapter:
     def expand_design(
         self, design: ProductDesign, directory: Path
     ) -> ProductDesign:
+        """Replace the phase-1 design once the product holds the upstream manifest part."""
         return design  # whole files; nothing expands inside a build
 
     def design_of_manifest(
         self, manifest: Mapping, directory: Path
     ) -> ProductDesign | None:
+        """The official design a manifest describes (for registered products)."""
         section = manifest.get("family_section") or {}
         mirror = section.get("mirror")
         if mirror is None or mirror.get("package") != LIBRARY_TAR_NAME:
             return None
         design = _library_design()
         if manifest.get("label") != design.label:
-            import dataclasses
-
             design = dataclasses.replace(design, label=manifest["label"])
         return design
 
@@ -126,6 +130,7 @@ class MilesAdapter:
         manifest: Mapping,
         cache: SignatureCache | None = None,
     ) -> PartVerdict:
+        """The generic two-state classification, shared by every family."""
         return classify_part_generic(design, part, directory, manifest, cache)
 
     def fetch_part(
@@ -134,9 +139,10 @@ class MilesAdapter:
         part: PartDesign,
         directory: Path,
         *,
-        session=None,
-        log=print,
+        session: requests.Session | None = None,
+        log: Callable[[str], None] = print,
     ) -> Mapping:
+        """Fetch one missing part over HTTP (streamed, hashed)."""
         if part.url is None:
             raise SourceUnavailableError(
                 f"{part.name}: no fetch URL in the design"

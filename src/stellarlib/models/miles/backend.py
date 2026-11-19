@@ -21,6 +21,7 @@ name in the set's notes, never silently dropped.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 import os
 from pathlib import Path
 import tarfile
@@ -67,6 +68,7 @@ MILES_REFERENCES = references("miles")
 
 
 def miles_identity() -> ModelIdentity:
+    """The identity of the MILES empirical library."""
     return ModelIdentity(
         family="miles",
         release="2011",
@@ -81,7 +83,9 @@ def miles_identity() -> ModelIdentity:
     )
 
 
-def _collect_files(sources) -> list[Path]:
+def _collect_files(
+    sources: str | os.PathLike | Iterable[str | os.PathLike],
+) -> list[Path]:
     files: list[Path] = []
     for source in (
         [sources] if isinstance(sources, (str, os.PathLike)) else sources
@@ -102,7 +106,10 @@ def _collect_files(sources) -> list[Path]:
     return files
 
 
-def read_miles(sources, params_path=None) -> SpectrumSet:
+def read_miles(
+    sources: str | os.PathLike | Iterable[str | os.PathLike],
+    params_path: str | Path | None = None,
+) -> SpectrumSet:
     """Read the MILES library into a set: the official FITS tarball, an
     extracted directory, or a list of FITS files plus the parameter table
     (``params_path=``; discovered among the sources — or next to a

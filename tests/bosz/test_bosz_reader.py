@@ -59,7 +59,7 @@ class TestParseFilename:
             "bosz2024_mp_t5000_g+4.5_m+0.00_resam.txt.gz",
         ):
             assert FILENAME_RE.match(bad) is None
-            with pytest.raises(ValueError):
+            with pytest.raises(ValueError, match="not a BOSZ"):
                 parse_filename(bad)
 
     def test_recognize_by_name(self):

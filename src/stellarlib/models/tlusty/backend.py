@@ -16,6 +16,7 @@ by its own member name.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 import os
 from pathlib import Path
 import tarfile
@@ -26,6 +27,7 @@ from stellarlib.exceptions import (
     MetadataConflictError,
     UnrecognizedFormatError,
 )
+from stellarlib.models.tlusty.design import TLUSTY_TARS
 from stellarlib.models.tlusty.reader import (
     FILENAME_RE,
     parse_filename,
@@ -60,6 +62,7 @@ TLUSTY_REFERENCES = references("tlusty")
 
 
 def tlusty_identity(release: str, composition: str) -> ModelIdentity:
+    """The identity of one TLUSTY release at one composition."""
     product = "ostar2002" if release == "OSTAR2002" else "bstar2006"
     return ModelIdentity(
         family="tlusty",
@@ -98,7 +101,9 @@ def _infer_release(teffs: tuple[int, ...], release: str | None) -> str:
     )
 
 
-def _collect_files(sources) -> list[Path]:
+def _collect_files(
+    sources: str | os.PathLike | Iterable[str | os.PathLike],
+) -> list[Path]:
     if isinstance(sources, (str, os.PathLike)):
         p = Path(sources)
         if p.is_dir():
@@ -124,7 +129,10 @@ def _collect_files(sources) -> list[Path]:
     return files
 
 
-def read_tlusty(sources, release: str | None = None) -> SpectrumSet:
+def read_tlusty(
+    sources: str | os.PathLike | Iterable[str | os.PathLike],
+    release: str | None = None,
+) -> SpectrumSet:
     """Read TLUSTY optical spectra into a set: a vispec tar archive (the
     upstream publishing unit — spectra stream from its members, kind 7
     and kind 17 together) or a directory/file list of extracted members."""
@@ -250,8 +258,8 @@ def _model_key(facts: dict) -> tuple:
     )
 
 
-def _set_facts(kind7, release):
-    def _single(key: str, label: str):
+def _set_facts(kind7: list, release: str | None) -> tuple:
+    def _single(key: str, label: str) -> object:
         values = sorted({facts[key] for _, facts in kind7})
         if len(values) != 1:
             raise MetadataConflictError(
@@ -270,7 +278,6 @@ def _set_facts(kind7, release):
 
 def _read_tar(tar_path: Path, release: str | None) -> SpectrumSet:
     """Read one vispec tar archive: the whole model, both kinds."""
-    from stellarlib.models.tlusty.design import TLUSTY_TARS
 
     with tarfile.open(tar_path, "r") as tf:
         member_names = [
@@ -284,9 +291,7 @@ def _read_tar(tar_path: Path, release: str | None) -> SpectrumSet:
         raise UnrecognizedFormatError(
             f"{tar_path.name}: the archive holds no kind-7 detailed spectra"
         )
-    siblings = {name: n for name, n in (
-        (_model_key(parse_filename(n)), n) for n in kind17
-    )}
+    siblings = {_model_key(parse_filename(n)): n for n in kind17}
 
     parsed7 = [(n, parse_filename(n)) for n in sorted(kind7)]
     composition, vmicro, teffs, loggs, release_name = _set_facts(

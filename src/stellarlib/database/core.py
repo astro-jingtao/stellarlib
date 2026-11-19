@@ -21,14 +21,17 @@ class ProductRecord:
 
     @property
     def family(self) -> str:
+        """The manifest's family name."""
         return self.manifest["family"]
 
     @property
     def release(self) -> str:
+        """The manifest's release name."""
         return self.manifest["release"]
 
     @property
     def label(self) -> str:
+        """The product's label within its release."""
         return self.manifest["label"]
 
     def __repr__(self) -> str:  # pragma: no cover - debug convenience
@@ -38,7 +41,8 @@ class ProductRecord:
 class Database:
     """An opened local database: the products present under one root."""
 
-    def __init__(self, root: Path):
+    def __init__(self, root: Path) -> None:
+        """Open one database root: every product directory's manifest."""
         self.root = Path(root)
         if not self.root.is_dir():
             raise NotADirectoryError(
@@ -52,11 +56,13 @@ class Database:
 
     @property
     def products(self) -> tuple[ProductRecord, ...]:
+        """Every product directory under the root."""
         return self._products
 
     def products_for(
         self, family: str, release: str | None = None
     ) -> tuple[ProductRecord, ...]:
+        """The family's products, optionally one release."""
         return tuple(
             p
             for p in self._products
@@ -179,6 +185,7 @@ class Database:
         return record.directory
 
     def describe(self) -> str:
+        """A human-readable inventory of the database."""
         lines = [
             f"stellarlib database at {self.root}",
             f"products: {len(self._products)}",

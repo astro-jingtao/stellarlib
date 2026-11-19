@@ -123,7 +123,7 @@ class TestGridIntrospection:
         assert grid.has_holes()
 
     def test_duplicate_node_refused(self):
-        nodes = _full_nodes() + [_make_node(3500.0, 1.0, -0.5)]
+        nodes = [*_full_nodes(), _make_node(3500.0, 1.0, -0.5)]
         with pytest.raises(ValueError, match="duplicate"):
             _grid(nodes)
 
@@ -281,7 +281,7 @@ class TestFacadePointQueries:
 class TestFacadeCornerMechanism:
     def test_corner_weights_and_corner_spectrum_pair(self):
         grid = _grid(_full_nodes())
-        idx, w, clamped = grid.corner_weights(
+        idx, w, _clamped = grid.corner_weights(
             teff=[3760.0, 3900.0],
             log_surface_gravity=[1.3, 1.7],
             m_h=[-0.2, -0.1],

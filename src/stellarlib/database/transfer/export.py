@@ -14,12 +14,15 @@ database for :func:`merge_database`.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 import dataclasses
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 import shutil
 import subprocess
 
+from stellarlib import __version__
 from stellarlib.database.build import _apply_select
 from stellarlib.database.manifest import read_manifest
 from stellarlib.database.scan import scan_database
@@ -37,7 +40,6 @@ __all__ = [
 
 
 def _now_iso() -> str:
-    from datetime import datetime, timezone
 
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -52,6 +54,7 @@ class ExportResult:
 
     @property
     def products(self) -> int:
+        """How many products the plan carries."""
         return len(self.plan["products"])
 
 
@@ -72,7 +75,7 @@ def export_database(
     name: str = "selection",
     *,
     checksums: str = "recorded",
-    log=print,
+    log: Callable[[str], None] = print,
 ) -> ExportResult:
     """Write a selection of one database to ``<db>/export/<name>/``.
 
@@ -85,7 +88,6 @@ def export_database(
     unrecorded files too, making the plan end-to-end verifiable at the
     cost of reading every selected byte.
     """
-    from stellarlib import __version__
 
     root = Path(database)
     if not root.is_dir():
@@ -227,9 +229,11 @@ class VerifyReport:
 
     @property
     def ok(self) -> bool:
+        """Whether every checked file verified."""
         return not (self.missing or self.size_mismatches or self.sha_mismatches)
 
     def summary(self) -> str:
+        """The verification outcome as one human-readable block."""
         status = "OK" if self.ok else "FAILED"
         return (
             f"verify {self.database} against {self.plan_path}: {status} — "
@@ -278,7 +282,11 @@ def rsync_command(database: str | Path, export_dir: str | Path, destination: str
 
 
 def run_rsync(
-    database: str | Path, export_dir: str | Path, destination: str, *, log=print
+    database: str | Path,
+    export_dir: str | Path,
+    destination: str,
+    *,
+    log: Callable[[str], None] = print,
 ) -> None:
     """Execute the rsync transport (the command above, run as-is)."""
     if shutil.which("rsync") is None:

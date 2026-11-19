@@ -71,13 +71,13 @@ def _write17(path: Path, teff: int, logg: float) -> None:
 def main(argv: list[str]) -> int:
     window_names = []
     for teff, logg in OSTAR_WINDOW:
-        stem = f"G{teff:05d}g{int(round(logg * 100)):03d}v10"
+        stem = f"G{teff:05d}g{round(logg * 100):03d}v10"
         _write(HERE / f"{stem}.vis.7.gz", teff, logg)
         _write17(HERE / f"{stem}.vis.17.gz", teff, logg)
         window_names += [f"{stem}.vis.7.gz", f"{stem}.vis.17.gz"]
     for teff, logg in BSTAR_WINDOW:
         _write(
-            HERE / f"BG{teff:05d}g{int(round(logg * 100)):03d}v20.vis.7.gz",
+            HERE / f"BG{teff:05d}g{round(logg * 100):03d}v20.vis.7.gz",
             teff,
             logg,
         )

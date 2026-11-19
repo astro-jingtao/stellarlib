@@ -13,12 +13,16 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from stellarlib.core import ModelIdentity
 from stellarlib.exceptions import UnsafeInterpolationError
 from stellarlib.interp import (
     corner_weights,
     resample_wavelengths,
     voronoi_nearest,
 )
+from stellarlib.native import NativeSpectrum
+from stellarlib.spectrum import Spectrum
+from stellarlib.unified import UnifiedView
 
 TEFFS = np.array([3500.0, 3750.0, 4000.0, 4250.0])
 LOGGS = np.array([0.0, 0.5, 1.0, 1.5, 2.0])
@@ -30,9 +34,11 @@ def _downstream_corner_weights(teffs, loggs, mhs, teff, logg, mh):
     teff = np.atleast_1d(np.asarray(teff, dtype=np.float64))
     logg = np.atleast_1d(np.asarray(logg, dtype=np.float64))
     mh = np.atleast_1d(np.asarray(mh, dtype=np.float64))
-    n_t, n_g, n_m = teffs.size, loggs.size, mhs.size
+    n_g, n_m = loggs.size, mhs.size
 
-    out_of = lambda x, axis: (x < axis[0]) | (x > axis[-1])
+    def out_of(x, axis):
+        return (x < axis[0]) | (x > axis[-1])
+
     clamped = (out_of(teff, teffs), out_of(logg, loggs), out_of(mh, mhs))
 
     def bracket(axis, x):
@@ -80,7 +86,8 @@ class TestCornerWeightsContract:
             logg=1.0,
             mh=-0.5,
         )
-        assert idx.shape == (1, 8) and w.shape == (1, 8)
+        assert idx.shape == (1, 8)
+        assert w.shape == (1, 8)
         np.testing.assert_allclose(w.sum(), 1.0)
         assert np.count_nonzero(w) == 1
         # node (1, 2, 1): flat = (1*5 + 2)*4 + 1 = 29
@@ -174,7 +181,8 @@ class TestVoronoiNearest:
         )
         assert list(indices) == [0, 3]
         assert distances.shape == (2,)
-        assert scales["teff"] == 250.0 and scales["logg"] == 0.5
+        assert scales["teff"] == 250.0
+        assert scales["logg"] == 0.5
 
     def test_holes_never_selected(self):
         # the teff=3750 column does not exist (holes); the query sits in
@@ -196,10 +204,6 @@ class TestVoronoiNearest:
 
 class TestResampleWavelengths:
     def _make_spectrum(self):
-        from stellarlib.core import ModelIdentity
-        from stellarlib.native import NativeSpectrum
-        from stellarlib.spectrum import Spectrum
-        from stellarlib.unified import UnifiedView
 
         wave = np.linspace(1000.0, 2000.0, 101)
         native = NativeSpectrum(
@@ -238,9 +242,6 @@ class TestResampleWavelengths:
             resample_wavelengths(spectrum, [1500.0, 1100.0])
 
     def test_requires_wavelength(self):
-        from stellarlib.core import ModelIdentity
-        from stellarlib.native import NativeSpectrum
-        from stellarlib.spectrum import Spectrum
 
         native = NativeSpectrum(wavelength=None, flux=np.ones(5))
         spectrum = Spectrum(

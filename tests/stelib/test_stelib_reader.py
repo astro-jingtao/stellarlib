@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from astropy.io import fits
+from astropy.io import fits, fits as astropy_fits
 import pytest
 
 from stellarlib.models.stelib.reader import (
@@ -62,7 +62,6 @@ class TestReadFits:
         assert other.wavelength[0] != pytest.approx(one.wavelength[0])
 
     def test_2d_image_refused(self, tmp_path):
-        from astropy.io import fits as astropy_fits
 
         hdu = astropy_fits.PrimaryHDU(data=[[1.0, 2.0]])
         hdu.header["BUNIT"] = "erg /s /cm2 /angstroms"

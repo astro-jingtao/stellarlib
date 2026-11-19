@@ -12,32 +12,42 @@ completed) without the network.
 
 from __future__ import annotations
 
+import gzip
+import hashlib
 import json
+import os
 from pathlib import Path
 import threading
 
 import pytest
+import requests
 
+import stellarlib.database.build as build_mod
 from stellarlib.database.build import (
     build_database,
     register_local_product,
     verify_database,
 )
 from stellarlib.database.core import open_database
+import stellarlib.database.design as design_mod
 from stellarlib.database.design import (
     PartDesign,
     VerdictKind,
     classify_part_generic,
 )
 from stellarlib.database.manifest import (
-    MANIFEST_SCHEMA,
     empty_manifest,
     read_manifest,
     write_manifest,
 )
 from stellarlib.database.scan import scan_database
+import stellarlib.database.signature_cache as sig_mod
 from stellarlib.database.signature_cache import SignatureCache
-from stellarlib.exceptions import DataIntegrityError
+from stellarlib.exceptions import DataIntegrityError, WavelengthGridError
+from stellarlib.facade import BoszSpectra, TlustySpectra, construct
+from stellarlib.integrity import sha256_file
+from stellarlib.models.bosz.design import BOSZ_ADAPTER, parse_bulkdl_script, parse_directory_index
+from stellarlib.models.tlusty.design import TLUSTY_ADAPTER
 
 DATA = Path(__file__).parent / "data" / "bosz"
 TLUSTY_DATA = Path(__file__).parent / "data" / "tlusty"
@@ -82,26 +92,26 @@ LINEID_NAMES = [
 
 def _bulkdl_text(names) -> bytes:
     lines = ["#!/bin/sh"]
-    for name in names:
-        lines.append(
-            f'curl -f --create-dirs --output "r500/m+0.00/{name}" '
-            f'"{_MAST}/r500/m+0.00/{name}"'
-        )
+    lines.extend(
+        f'curl -f --create-dirs --output "r500/m+0.00/{name}" '
+        f'"{_MAST}/r500/m+0.00/{name}"'
+        for name in names
+    )
     return ("\n".join(lines) + "\n").encode()
 
 
 def _rorig_script_text(names) -> bytes:
     lines = ["#!/bin/sh"]
-    for name in names:
-        lines.append(
-            f'curl -f --create-dirs --output "rorig/m+0.00/{name}" '
-            f'"{_MAST}/rorig/m+0.00/{name}"'
-        )
+    lines.extend(
+        f'curl -f --create-dirs --output "rorig/m+0.00/{name}" '
+        f'"{_MAST}/rorig/m+0.00/{name}"'
+        for name in names
+    )
     return ("\n".join(lines) + "\n").encode()
 
 
 def _rorig_index_html(lineid_names, spectrum_names) -> bytes:
-    links = ["/hlsps/bosz/bosz2024/rorig/"] + lineid_names + spectrum_names
+    links = ["/hlsps/bosz/bosz2024/rorig/", *lineid_names, *spectrum_names]
     body = "\n".join(
         f'<li><a href="{name}"> {name.rsplit("/", 1)[-1]}</a></li>'
         for name in links
@@ -116,19 +126,16 @@ def _rorig_index_html(lineid_names, spectrum_names) -> bytes:
 
 
 def _gz_text(rows) -> bytes:
-    import gzip
 
     return gzip.compress(("\n".join(rows) + "\n").encode())
 
 
 class FakeResponse:
-    def __init__(self, status_code: int, content: bytes):
+    def __init__(self, status_code: int, content: bytes) -> None:
         self.status_code = status_code
         self._content = content
 
     def raise_for_status(self) -> None:
-        import requests
-
         if self.status_code >= 400:
             raise requests.HTTPError(f"{self.status_code}")
 
@@ -140,7 +147,7 @@ class FakeResponse:
 class FakeSession:
     """Serves known URLs; answers 404 for everything else and counts calls."""
 
-    def __init__(self, mapping: dict[str, bytes]):
+    def __init__(self, mapping: dict[str, bytes]) -> None:
         self.mapping = mapping
         self.calls: list[str] = []
 
@@ -161,7 +168,6 @@ def _mirror_session() -> FakeSession:
 
 class TestBlueprintDesign:
     def test_full_library_declared(self):
-        from stellarlib.models.bosz.design import BOSZ_ADAPTER
 
         designs = list(BOSZ_ADAPTER.designs({"family": "bosz"}))
         assert len(designs) == 113  # 8 broadenings x 14 metallicities + wave
@@ -172,7 +178,6 @@ class TestBlueprintDesign:
         assert "bosz/rorig/m-2.50" in {d.directory_name for d in designs}
 
     def test_directory_design_is_phase_one_script(self):
-        from stellarlib.models.bosz.design import BOSZ_ADAPTER
 
         designs = {
             d.directory_name: d
@@ -185,7 +190,6 @@ class TestBlueprintDesign:
         assert part.url == SCRIPT_URL
 
     def test_rorig_design_also_declares_the_directory_index(self):
-        from stellarlib.models.bosz.design import BOSZ_ADAPTER
 
         designs = {
             d.directory_name: d
@@ -201,7 +205,6 @@ class TestBlueprintDesign:
         assert index.url == f"{_MAST}/rorig/m+0.00/"
 
     def test_parse_directory_index(self):
-        from stellarlib.models.bosz.design import parse_directory_index
 
         html = _rorig_index_html(LINEID_NAMES, RORIG_NODE_NAMES).decode()
         pairs = parse_directory_index(html, RORIG_INDEX_URL)
@@ -218,7 +221,6 @@ class TestBlueprintDesign:
             )
 
     def test_expand_design_rorig_enumerates_lineid(self, tmp_path):
-        from stellarlib.models.bosz.design import BOSZ_ADAPTER
 
         designs = {
             d.directory_name: d
@@ -247,7 +249,6 @@ class TestBlueprintDesign:
         assert again.parts == expanded.parts
 
     def test_wave_product_lists_all_seven_grids(self):
-        from stellarlib.models.bosz.design import BOSZ_ADAPTER
 
         designs = {
             d.directory_name: d
@@ -263,7 +264,6 @@ class TestBlueprintDesign:
         assert {p.role for p in design.parts} == {"wavelength_grid"}
 
     def test_parse_bulkdl_script(self):
-        from stellarlib.models.bosz.design import parse_bulkdl_script
 
         pairs = parse_bulkdl_script(_bulkdl_text(SOLAR_NAMES).decode())
         assert pairs == tuple(
@@ -275,7 +275,6 @@ class TestBlueprintDesign:
             parse_bulkdl_script("#!/bin/sh\n")
 
     def test_expand_design_needs_cached_script(self, tmp_path):
-        from stellarlib.models.bosz.design import BOSZ_ADAPTER
 
         designs = {
             d.directory_name: d
@@ -403,13 +402,11 @@ class TestScan:
 
 
 def _sha(path: Path) -> str:
-    from stellarlib.integrity import sha256_file
 
     return sha256_file(path)
 
 
 def _sha_str(payload: bytes) -> str:
-    import hashlib
 
     return hashlib.sha256(payload).hexdigest()
 
@@ -445,7 +442,6 @@ class TestManifestIntegrityVerdict:
 
     def test_size_mismatch_is_nonconforming_without_hashing(
             self, tmp_path, monkeypatch):
-        import stellarlib.database.design as design_mod
 
         def _forbidden(*args, **kwargs):
             raise AssertionError("a size mismatch needs no hash read")
@@ -457,7 +453,6 @@ class TestManifestIntegrityVerdict:
 
     def test_matching_size_still_pays_the_sha256_comparison(
             self, tmp_path, monkeypatch):
-        import stellarlib.database.design as design_mod
 
         counted = {"n": 0}
         real = design_mod.sha256_file
@@ -493,7 +488,6 @@ class TestManifestIntegrityVerdict:
 
     def test_cache_serves_the_hash_of_an_unchanged_file(
             self, tmp_path, monkeypatch):
-        import stellarlib.database.signature_cache as sig_mod
 
         def _forbidden(*args, **kwargs):
             raise AssertionError("an unchanged file must not be re-read")
@@ -544,7 +538,6 @@ class TestSignatureCache:
         )
 
     def _count_reads(self, monkeypatch):
-        import stellarlib.database.signature_cache as sig_mod
 
         counted = {"n": 0}
         real = sig_mod.sha256_file
@@ -602,7 +595,6 @@ class TestSignatureCache:
 
     def test_symlinked_database_alias_keeps_keys_stable(
             self, tmp_path, monkeypatch):
-        import os
 
         self._built_db(tmp_path)
         alias = tmp_path.parent / (tmp_path.name + "-alias")
@@ -629,7 +621,6 @@ class TestSignatureCache:
         # signature, so a same-size edit with a restored mtime is
         # beyond its detection — deleting the cache forces the full
         # re-verify that catches it
-        import os
 
         self._built_db(tmp_path)
         part = tmp_path / "bosz" / "r500" / "m+0.00" / SOLAR_NAMES[0]
@@ -722,7 +713,6 @@ class TestBuild:
         assert notes["wave_file"].endswith(WAVE_NAME)
 
     def test_build_fetches_rorig_mirror_with_lineid(self, tmp_path):
-        import hashlib
 
         lineid_bytes = _gz_text(["507.718 HeI 1.1", "522.213 HeI 6.1"])
         noresam_bytes = _gz_text(["1000.0 1.0 1.0", "1001.0 0.9 1.0"])
@@ -877,7 +867,7 @@ class TestBuildSelect:
 class _RaisingSession(FakeSession):
     """Serves the mapped URLs; raises for the URLs in ``broken``."""
 
-    def __init__(self, mapping, broken, calls):
+    def __init__(self, mapping, broken, calls) -> None:
         super().__init__(mapping)
         self._broken = set(broken)
         self._calls = calls  # shared across worker sessions
@@ -885,8 +875,6 @@ class _RaisingSession(FakeSession):
     def get(self, url, stream=True, timeout=None):
         self._calls.append(url)
         if url in self._broken:
-            import requests
-
             raise requests.ConnectionError("simulated transport failure")
         if url in self.mapping:
             return FakeResponse(200, self.mapping[url])
@@ -900,7 +888,9 @@ class _BlockingSession(_RaisingSession):
     failure, making the drain contract deterministically observable.
     ``order`` records the enter/fail/resume sequence for assertions."""
 
-    def __init__(self, mapping, broken, calls, block, release, entered, order):
+    def __init__(
+        self, mapping, broken, calls, block, release, entered, order
+    ) -> None:
         super().__init__(mapping, broken, calls)
         self._block = set(block)
         self._release = release
@@ -921,8 +911,6 @@ class _BlockingSession(_RaisingSession):
             self._entered.wait(timeout=30)
             self._release.set()
             self._order.append(("fail", url.rsplit("/", 1)[-1]))
-            import requests
-
             raise requests.ConnectionError("simulated transport failure")
         return super().get(url, stream=stream, timeout=timeout)
 
@@ -965,7 +953,6 @@ class TestParallelFetch:
         assert len(grid) == len(SOLAR_NAMES)
 
     def test_parallel_rorig_expands_after_manifest_batch(self, tmp_path):
-        import hashlib
 
         lineid_bytes = _gz_text(["507.718 HeI 1.1", "522.213 HeI 6.1"])
         noresam_bytes = _gz_text(["1000.0 1.0 1.0", "1001.0 0.9 1.0"])
@@ -1197,7 +1184,6 @@ class TestManifestFlushDuringFetch:
         # spectrum's fetch (with the threshold at 2: script + first
         # spectrum arrived) must find the first spectrum already
         # recorded on disk
-        import stellarlib.database.build as build_mod
 
         monkeypatch.setattr(build_mod, "_MANIFEST_FLUSH_PARTS", 2)
         directory = tmp_path / "bosz" / "r500" / "m+0.00"
@@ -1269,7 +1255,8 @@ class TestVerifyDatabase:
         assert v.state == "complete"
         assert v.backfilled == 2
         assert v.recorded_ok == 3  # script + the two untouched spectra
-        assert v.missing == 0 and v.nonconforming == ()
+        assert v.missing == 0
+        assert v.nonconforming == ()
         restored = read_manifest(directory)["parts"]
         entry = restored[lost]
         assert entry["sha256"] == _sha(DATA / lost)
@@ -1357,8 +1344,6 @@ class TestVerifyDatabase:
         # drop the builder's cache: the first verify reads every part
         (tmp_path / "signature_cache.json").unlink()
 
-        import stellarlib.database.build as build_mod
-
         calls: list[Path] = []
         real = build_mod.sha256_file
 
@@ -1379,7 +1364,6 @@ class TestVerifyDatabase:
         assert first.products == second.products
 
     def test_manifest_flushes_mid_verify(self, tmp_path, monkeypatch):
-        import stellarlib.database.build as build_mod
 
         directory = self._mirror_built(tmp_path)
         self._strip_records(directory, SOLAR_NAMES)
@@ -1466,7 +1450,6 @@ class TestRegisterLocalProduct:
         db = open_database(tmp_path)
         # wave missing in the reference set: opening the grid must fail
         # loudly (the pairing decision is explicit, never guessed)
-        from stellarlib.exceptions import WavelengthGridError
 
         with pytest.raises(WavelengthGridError, match="wave_path"):
             db.grid("bosz/2024", label="inplace")
@@ -1560,7 +1543,6 @@ class TestMilesBlueprint:
             method="exact", teff=4020.0, log_surface_gravity=1.32, m_h=-0.13
         )
         assert len(spectrum) == 4367
-        from stellarlib.facade import construct
 
         miles = construct("miles/2011", database=tmp_path)
         assert miles.identity.release == "2011"
@@ -1590,7 +1572,6 @@ class TestMilesBlueprint:
 
 class TestTlustyBlueprint:
     def test_full_tar_inventory_declared(self):
-        from stellarlib.models.tlusty.design import TLUSTY_ADAPTER
 
         designs = list(TLUSTY_ADAPTER.designs({"family": "tlusty"}))
         assert len(designs) == 20  # OSTAR 10 compositions + BSTAR 5 x 2 vmicro
@@ -1646,7 +1627,6 @@ class TestDatabaseOpen:
         # database and hands its sets to the unified query layer
         # (regression: the import inside _database_grid targeted a name
         # the database package never exported, so this path ImportError'd)
-        from stellarlib.facade import BoszSpectra, TlustySpectra
 
         register_local_product(
             tmp_path, "bosz", "solar",
@@ -1676,8 +1656,6 @@ class TestDatabaseOpen:
         # wave_path pin reaches the reader instead of being dropped
         # (a bogus pin is a loud error, never silently replaced by
         # discovery)
-        from stellarlib.exceptions import WavelengthGridError
-        from stellarlib.facade import BoszSpectra
 
         build_database(
             tmp_path,

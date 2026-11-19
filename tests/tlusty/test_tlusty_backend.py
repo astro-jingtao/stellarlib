@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import shutil
+import tarfile
 
 import numpy as np
 import pytest
@@ -18,11 +19,16 @@ import pytest
 from stellarlib.core import ParameterRole
 from stellarlib.exceptions import (
     AmbiguousConventionError,
+    AmbiguousFormatError,
     MetadataConflictError,
+    UnrecognizedFormatError,
+    UnsafeInterpolationError,
 )
 from stellarlib.facade import TlustySpectra
 from stellarlib.grid import open_grid
 from stellarlib.models.tlusty.backend import read_tlusty
+from stellarlib.models.tlusty.reader import read_vis_payload
+from stellarlib.warnings import ClampedInterpolationWarning
 
 DATA = Path(__file__).parent.parent / "data" / "tlusty"
 WAVE = np.array([5000.0, 5001.0, 5002.0])
@@ -100,7 +106,6 @@ class TestSetConstruction:
         assert not [w for w in recwarn.list if "kind-17" in str(w.message)]
 
     def test_only_kind17_refused(self):
-        from stellarlib.exceptions import UnrecognizedFormatError
 
         with pytest.raises(UnrecognizedFormatError, match="kind-17 continuum"):
             read_tlusty([DATA / "G27500g325v10.vis.17.gz"])
@@ -130,9 +135,6 @@ class TestVispecTar:
 
     def test_tar_continuum_readable_from_member_name(self):
         # the recorded sibling is addressable: one member read, own grid
-        import tarfile
-
-        from stellarlib.models.tlusty.reader import read_vis_payload
 
         set_ = read_tlusty(TAR)
         node = next(iter(set_))
@@ -151,12 +153,10 @@ class TestVispecTar:
             read_tlusty([TAR, DATA / OSTAR_NAMES[0]])
 
     def test_kind17_only_tar_refused(self, tmp_path):
-        import tarfile
 
         stray = tmp_path / "only17.tar"
         with tarfile.open(stray, "w") as tf:
             tf.add(DATA / "G27500g325v10.vis.17.gz", arcname="G27500g325v10.vis.17.gz")
-        from stellarlib.exceptions import UnrecognizedFormatError
 
         with pytest.raises(UnrecognizedFormatError, match="kind-7"):
             read_tlusty(stray)
@@ -178,7 +178,6 @@ class TestOpenGrid:
         )
         shutil.copy(bosz, tmp_path / bosz.name)
         shutil.copy(DATA / OSTAR_NAMES[0], tmp_path / OSTAR_NAMES[0])
-        from stellarlib.exceptions import AmbiguousFormatError
 
         with pytest.raises(AmbiguousFormatError, match="pass model="):
             open_grid(tmp_path)
@@ -211,11 +210,9 @@ class TestBilinearInterpolation:
         np.testing.assert_allclose(
             spectrum.native.flux, 3.0 * 3.0 * WAVE / 1000.0
         )
-        from stellarlib.exceptions import UnsafeInterpolationError
 
         with pytest.raises(UnsafeInterpolationError, match="outside"):
             grid.spectrum(teff=20000.0, log_surface_gravity=3.0)
-        from stellarlib.warnings import ClampedInterpolationWarning
 
         with pytest.warns(ClampedInterpolationWarning):
             clamped = grid.spectrum(

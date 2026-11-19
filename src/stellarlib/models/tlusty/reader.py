@@ -11,6 +11,7 @@ given such a path opens ``path + '.gz'``.
 from __future__ import annotations
 
 import gzip
+import io
 import os
 from pathlib import Path
 import re
@@ -46,15 +47,10 @@ def parse_filename(name: str) -> dict:
 def read_vis(path: str | os.PathLike) -> NativeSpectrum:
     """Read one ``*.vis.7`` spectrum: (wavelength [A, air], H_lambda)."""
     text = str(path)
-    handle = (
-        gzip.open(text, "rb")
-        if text.endswith(".gz")
-        else gzip.open(text + ".gz", "rb")
-    )
-    try:
+    # the on-disk name may drop the .gz suffix; the published name has it
+    gz_name = text if text.endswith(".gz") else text + ".gz"
+    with gzip.open(gz_name, "rb") as handle:
         data = np.loadtxt(handle, ndmin=2)
-    finally:
-        handle.close()
     if data.ndim != 2 or data.shape[1] != 2:
         raise ValueError(f"{path}: expected two columns (wave, H)")
     name = Path(text + ("" if text.endswith(".gz") else ".gz")).name
@@ -75,7 +71,6 @@ def read_vis_payload(payload: bytes, name: str) -> NativeSpectrum:
     ``*.vis.17.gz`` inside a vispec archive); the payload is the gzip
     member exactly as published.
     """
-    import io
 
     raw = gzip.decompress(payload) if name.endswith(".gz") else payload
     data = np.loadtxt(io.BytesIO(raw), ndmin=2)

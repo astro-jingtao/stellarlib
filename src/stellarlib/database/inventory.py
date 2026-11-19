@@ -10,8 +10,10 @@ from datetime import datetime, timezone
 import json
 from pathlib import Path
 
+from stellarlib import __version__
 from stellarlib.database.core import Database
 from stellarlib.database.scan import scan_database, write_status
+from stellarlib.registry.docs import render_documentation
 
 __all__ = ["refresh_inventory"]
 
@@ -22,8 +24,6 @@ def _now_iso() -> str:
 
 def refresh_inventory(root: Path) -> None:
     """Regenerate database.json, README.md, doc snapshot, and db_status."""
-    from stellarlib import __version__
-    from stellarlib.registry.docs import render_documentation
 
     root = Path(root)
     products = Database(root).products

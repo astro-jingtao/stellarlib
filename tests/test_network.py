@@ -10,7 +10,6 @@ in docs/data-sources.md.
 from __future__ import annotations
 
 import pytest
-import requests
 
 from stellarlib.models import catalog
 

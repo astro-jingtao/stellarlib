@@ -13,8 +13,11 @@ exists upstream, and none is invented here.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
+import dataclasses
 from pathlib import Path
+
+import requests
 
 from stellarlib.database.design import (
     PartDesign,
@@ -75,6 +78,7 @@ def _tar_design(label: str, tar: Mapping) -> ProductDesign:
 
 
 class TlustyAdapter:
+    """The TLUSTY family's database adapter: all 20 vispec tars."""
     family = "tlusty"
 
     def designs(self, declaration: Mapping) -> Iterable[ProductDesign]:
@@ -85,11 +89,13 @@ class TlustyAdapter:
     def expand_design(
         self, design: ProductDesign, directory: Path
     ) -> ProductDesign:
+        """Replace the phase-1 design once the product holds the upstream manifest part."""
         return design  # one tar is one part; nothing to expand
 
     def design_of_manifest(
         self, manifest: Mapping, directory: Path
     ) -> ProductDesign | None:
+        """The official design a manifest describes (for registered products)."""
         section = manifest.get("family_section") or {}
         mirror = section.get("mirror")
         if mirror is None or "archive" not in mirror:
@@ -99,9 +105,9 @@ class TlustyAdapter:
             if tar["archive"] == archive:
                 design = _tar_design(label, tar)
                 if manifest.get("label") != design.label:
-                    import dataclasses
-
-                    design = dataclasses.replace(design, label=manifest["label"])
+                    design = dataclasses.replace(
+                        design, label=manifest["label"]
+                    )
                 return design
         return None
 
@@ -109,6 +115,7 @@ class TlustyAdapter:
         self, design: ProductDesign, part: PartDesign, directory: Path,
         manifest: Mapping, cache: SignatureCache | None = None,
     ) -> PartVerdict:
+        """The generic two-state classification, shared by every family."""
         return classify_part_generic(design, part, directory, manifest, cache)
 
     def fetch_part(
@@ -117,9 +124,10 @@ class TlustyAdapter:
         part: PartDesign,
         directory: Path,
         *,
-        session=None,
-        log=print,
+        session: requests.Session | None = None,
+        log: Callable[[str], None] = print,
     ) -> Mapping:
+        """Fetch one missing part over HTTP (streamed, hashed)."""
         if part.url is None:
             raise SourceUnavailableError(
                 f"{part.name}: no fetch URL in the design"

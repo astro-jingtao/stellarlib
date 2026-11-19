@@ -27,6 +27,7 @@ MANIFEST_SCHEMA = "stellarlib-manifest/1"
 
 
 def manifest_path(directory: Path) -> Path:
+    """The MANIFEST.json path of one product directory."""
     return Path(directory) / "MANIFEST.json"
 
 
@@ -63,6 +64,7 @@ def empty_manifest(
     family_section: Mapping | None = None,
     by_reference: bool = False,
 ) -> dict:
+    """A fresh manifest skeleton with no parts recorded yet."""
     return {
         "schema": MANIFEST_SCHEMA,
         "family": family,

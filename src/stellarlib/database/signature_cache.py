@@ -25,13 +25,13 @@ transfer verifies content by checksum anyway).
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterable
 import os
 from pathlib import Path
 
 from file_quick_signature.key import (
     apply_remappers,
     build_key,
-    file_quick_signature,
     parse_key,
 )
 from file_quick_signature.remapper import AbsoluteToRelativeRemapper
@@ -59,6 +59,7 @@ class SignatureCache:
     """
 
     def __init__(self, root: str | Path, writable: bool = True) -> None:
+        """One database's quick-signature cache (a derived accelerator)."""
         self._root = Path(root)
         self._remapper = AbsoluteToRelativeRemapper(
             os.path.realpath(str(self._root))
@@ -110,7 +111,7 @@ class SignatureCache:
         self._store.data[key] = digest
         self._dirty = True
 
-    def forget(self, paths) -> int:
+    def forget(self, paths: Iterable[Path]) -> int:
         """Drop every entry whose file path (relative to the root)
         matches one of ``paths`` exactly; returns how many went. The
         scoped form of deleting the whole store: the next scan re-hashes
@@ -119,7 +120,7 @@ class SignatureCache:
             lambda rel: rel in {str(p).replace("\\", "/") for p in paths}
         )
 
-    def forget_prefixes(self, prefixes) -> int:
+    def forget_prefixes(self, prefixes: Iterable[Path]) -> int:
         """Drop every entry whose file path (relative to the root) lies
         under one of ``prefixes`` (product directories, with or without
         the trailing slash); returns how many went."""
@@ -128,7 +129,7 @@ class SignatureCache:
         }
         return self._drop_if(lambda rel: rel.startswith(tuple(cleaned)))
 
-    def _drop_if(self, matches) -> int:
+    def _drop_if(self, matches: Callable[[str], bool]) -> int:
         if not self._writable:
             return 0
         doomed = [

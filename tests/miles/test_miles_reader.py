@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from astropy.io import fits
 import numpy as np
 import pytest
 
@@ -58,7 +59,6 @@ class TestReadFits:
         assert np.array_equal(by_path.wavelength, by_bytes.wavelength)
 
     def test_multi_row_image_is_a_format_change(self, tmp_path):
-        from astropy.io import fits
 
         hdu = fits.PrimaryHDU(data=np.zeros((2, 10), dtype=">f4"))
         path = tmp_path / "s0001.fits"

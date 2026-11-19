@@ -162,6 +162,7 @@ def _probe(label: str, url: str, note: str) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """CLI entry: probe every channel and report."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
         "--basel", action="store_true", help="only the BaSeL channels"

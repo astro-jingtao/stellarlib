@@ -26,6 +26,8 @@ from stellarlib.exceptions import (
     GridPointNotFoundError,
     UnrecognizedFormatError,
 )
+from stellarlib.models import BACKENDS, get_backend, parse_model_spec
+from stellarlib.provenance import Provenance
 from stellarlib.spectrum import GridNode, Spectrum, SpectrumSet
 from stellarlib.warnings import NearestGridPointWarning
 
@@ -42,7 +44,8 @@ class SpectrumGrid:
     (``load_cache_size()``/``clear_cache()``).
     """
 
-    def __init__(self, sets: Iterable[SpectrumSet]):
+    def __init__(self, sets: Iterable[SpectrumSet]) -> None:
+        """Index the sets' nodes; duplicates at one point are an error."""
         self._sets = tuple(sets)
         if not self._sets:
             raise ValueError("a SpectrumGrid needs at least one SpectrumSet")
@@ -75,8 +78,7 @@ class SpectrumGrid:
     def from_paths(
         cls, model: str, paths: Iterable[str | os.PathLike], **reader_options
     ) -> SpectrumGrid:
-        from stellarlib.models import get_backend
-
+        """Read the given files through the family's backend."""
         backend = get_backend(model)
         path_list = [Path(p) for p in paths]
         if not path_list:
@@ -87,8 +89,7 @@ class SpectrumGrid:
     def from_directory(
         cls, model: str, directory: str | os.PathLike, **reader_options
     ) -> SpectrumGrid:
-        from stellarlib.models import get_backend
-
+        """Read one product directory through the family's backend."""
         backend = get_backend(model)
         root = Path(directory)
         if not root.is_dir():
@@ -99,10 +100,12 @@ class SpectrumGrid:
 
     @property
     def sets(self) -> tuple[SpectrumSet, ...]:
+        """The grid's spectrum sets (one coherent product each)."""
         return self._sets
 
     @property
     def selectable(self) -> tuple[str, ...]:
+        """The backend-pinned coordinate names queries address."""
         return self._selectable
 
     def __len__(self) -> int:
@@ -134,14 +137,17 @@ class SpectrumGrid:
         )
 
     def has_holes(self) -> bool:
+        """Whether any cell of the axis product lacks a published node."""
         return len(self._node_of_key) != int(
             np.prod([len(v) for v in self.axes.values()])
         )
 
     def load_cache_size(self) -> int:
+        """How many node spectra are currently materialized."""
         return len(self._cache)
 
     def clear_cache(self) -> None:
+        """Drop all materialized spectra (the index stays)."""
         self._cache.clear()
 
     def _flat_axes(self) -> dict[str, np.ndarray]:
@@ -173,9 +179,8 @@ class SpectrumGrid:
         return spectrum
 
     @property
-    def provenance(self):
-        from stellarlib.provenance import Provenance
-
+    def provenance(self) -> Provenance:
+        """The merged provenance of every set the grid holds."""
         return Provenance(
             data_sources=tuple(
                 src for s in self._sets for src in s.provenance.data_sources
@@ -211,50 +216,55 @@ class SpectrumGrid:
         if method not in ("exact", "nearest"):
             raise ValueError(f"method must be 'exact' or 'nearest', got {method!r}")
 
-        requested = {k: v for k, v in coordinates.items()}
+        requested = dict(coordinates)
         unknown = set(requested) - set(self._selectable)
         if unknown:
             raise ValueError(
                 f"unknown selection coordinates {sorted(unknown)}; "
                 f"selectable: {list(self._selectable)}"
             )
-
         if method == "exact":
-            filled = dict(requested)
-            for name in self._selectable:
-                if name in filled:
-                    continue
-                values = self.axes[name]
-                if len(values) == 1:
-                    filled[name] = values[0]
-            still_missing = [
-                k
-                for k in self._selectable
-                if k not in filled and len(self.axes[k]) > 1
-            ]
-            if still_missing:
-                raise GridPointNotFoundError(
-                    f"coordinates {still_missing} have several values in this "
-                    f"grid and were not pinned; available axes: {self.axes}"
-                )
-            key = tuple(filled.get(k) for k in self._selectable)
-            if key not in self._node_of_key:
-                if key in self.holes:
-                    hole = dict(zip(self._selectable, key))
-                    raise GridHoleError(
-                        f"no published node at {hole} (a hole in the axis "
-                        f"rectangle); the grid's axes list what exists — "
-                        "see grid.holes"
-                    )
-                raise GridPointNotFoundError(
-                    f"no spectrum at {filled}; available axes: {self.axes}"
-                )
-            spectrum = self.load_node(key)
-            return spectrum.with_selection_info(
-                {"method": "exact", "requested": dict(requested), "returned": filled}
-            )
+            return self._select_exact(requested)
+        return self._select_nearest(requested)
 
-        # nearest: snap each requested coordinate independently
+    def _select_exact(self, requested: dict) -> Spectrum:
+        """The exact path: pin degenerate axes, demand the node."""
+        filled = dict(requested)
+        for name in self._selectable:
+            if name in filled:
+                continue
+            values = self.axes[name]
+            if len(values) == 1:
+                filled[name] = values[0]
+        still_missing = [
+            k
+            for k in self._selectable
+            if k not in filled and len(self.axes[k]) > 1
+        ]
+        if still_missing:
+            raise GridPointNotFoundError(
+                f"coordinates {still_missing} have several values in this "
+                f"grid and were not pinned; available axes: {self.axes}"
+            )
+        key = tuple(filled.get(k) for k in self._selectable)
+        if key not in self._node_of_key:
+            if key in self.holes:
+                hole = dict(zip(self._selectable, key))
+                raise GridHoleError(
+                    f"no published node at {hole} (a hole in the axis "
+                    f"rectangle); the grid's axes list what exists — "
+                    "see grid.holes"
+                )
+            raise GridPointNotFoundError(
+                f"no spectrum at {filled}; available axes: {self.axes}"
+            )
+        spectrum = self.load_node(key)
+        return spectrum.with_selection_info(
+            {"method": "exact", "requested": dict(requested), "returned": filled}
+        )
+
+    def _select_nearest(self, requested: dict) -> Spectrum:
+        """The nearest path: snap each coordinate, demand one candidate."""
         snapped = {}
         distances = {}
         for name, value in requested.items():
@@ -322,7 +332,6 @@ def open_grid(
     must claim them (``AmbiguousFormatError`` otherwise,
     ``UnrecognizedFormatError`` if none).
     """
-    from stellarlib.models import parse_model_spec
 
     p = Path(path)
     if model is not None:
@@ -338,8 +347,6 @@ def open_grid(
                 f"release {grid.identity.release!r}"
             )
         return grid
-
-    from stellarlib.models import BACKENDS
 
     paths = (
         sorted(q for q in p.rglob("*") if q.is_file() and not q.name.startswith("."))

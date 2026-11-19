@@ -8,6 +8,8 @@ from importlib.resources import files
 import subprocess
 import sys
 
+from stellarlib.skills import root
+
 
 class TestSkillsTree:
     def test_skill_files_ship_as_package_data(self):
@@ -22,7 +24,6 @@ class TestSkillsTree:
             assert (root / relative).is_file(), relative
 
     def test_discovery_entry_prints_the_root(self):
-        from stellarlib.skills import root
 
         assert root.name == "skills"
         assert (root / "SKILL-DEPLOY.md").is_file()

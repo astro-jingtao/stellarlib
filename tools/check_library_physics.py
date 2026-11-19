@@ -26,7 +26,7 @@ from __future__ import annotations
 from pathlib import Path
 import sys
 
-from astropy import constants as const, units as u
+from astropy import constants as const
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -46,6 +46,7 @@ def blackbody(wavelength_aa: np.ndarray, teff: float) -> np.ndarray:
 
 
 def check(directory: str) -> int:
+    """Run the physics checks over one BOSZ mirror; return a count."""
     spectra = read_bosz(directory)
     print(f"== {directory} :: {spectra.identity.label}")
     wave = None
@@ -86,6 +87,7 @@ def check(directory: str) -> int:
 
 
 def main(argv: list[str]) -> int:
+    """CLI entry: check every directory argument."""
     if len(argv) < 2:
         print(__doc__)
         return 2

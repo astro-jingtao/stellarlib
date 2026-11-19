@@ -51,6 +51,7 @@ def _escape(text: str | None) -> str:
 
 
 def render_documentation() -> str:
+    """The combined registry rendered as the human-readable document."""
     reg = load_registry()
     lines: list[str] = []
     add = lines.append

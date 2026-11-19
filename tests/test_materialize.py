@@ -54,13 +54,10 @@ class TestMaterialize:
         assert out.sidecar["identity"]["family"] == "bosz"
 
     def test_verify_sources_detects_change_and_loss(self, tmp_path):
-        grid = _grid()
         # copy sources to a scratch dir so mutating them is safe
         scratch = tmp_path / "src"
         scratch.mkdir()
-        local_names = [
-            n for n in NODE_NAMES
-        ] + ["bosz2024_wave_r500.txt"]
+        local_names = [*NODE_NAMES, "bosz2024_wave_r500.txt"]
         for name in local_names:
             (scratch / name).write_bytes((DATA / name).read_bytes())
         local_grid = BoszSpectra(
@@ -78,7 +75,7 @@ class TestMaterialize:
     def test_corner_mechanism_pairs_with_flux_block(self, tmp_path):
         grid = _grid()
         out = materialize_grid(grid, tmp_path / "block")
-        idx, w, clamped = out.corner_weights(
+        idx, w, _clamped = out.corner_weights(
             teff=[3760.0], log_surface_gravity=[1.3], m_h=[-0.25]
         )
         rows = out.corner_spectrum(idx[0])

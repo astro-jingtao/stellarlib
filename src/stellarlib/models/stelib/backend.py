@@ -21,6 +21,7 @@ by star name in the set's notes, never silently dropped.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 import os
 from pathlib import Path
 
@@ -29,6 +30,7 @@ from stellarlib.exceptions import (
     MetadataConflictError,
     UnrecognizedFormatError,
 )
+from stellarlib.models.stelib.design import CATALOG_BASES
 from stellarlib.models.stelib.reader import (
     is_corrected_spectrum,
     read_star_table,
@@ -59,6 +61,7 @@ STELIB_REFERENCES = references("stelib")
 
 
 def stelib_identity() -> ModelIdentity:
+    """The identity of the STELIB empirical library."""
     return ModelIdentity(
         family="stelib",
         release="2003",
@@ -76,7 +79,9 @@ def recognize_stelib(path: str | Path) -> bool:
     return recognize_stelib_fits(path)
 
 
-def _collect_files(sources) -> list[Path]:
+def _collect_files(
+    sources: str | os.PathLike | Iterable[str | os.PathLike],
+) -> list[Path]:
     files: list[Path] = []
     for source in [sources] if isinstance(sources, (str, os.PathLike)) else sources:
         path = Path(source)
@@ -95,7 +100,10 @@ def _collect_files(sources) -> list[Path]:
     return files
 
 
-def read_stelib(sources, table_path=None) -> SpectrumSet:
+def read_stelib(
+    sources: str | os.PathLike | Iterable[str | os.PathLike],
+    table_path: str | Path | None = None,
+) -> SpectrumSet:
     """Read the STELIB library into a set: the catalog tree (or its
     ``cor_sp`` subdirectory), or a list of spectrum files plus the star
     table (``table_path=``; discovered among the sources when omitted; a
@@ -241,7 +249,6 @@ def read_stelib(sources, table_path=None) -> SpectrumSet:
 
 
 def _provenance(members: dict[str, Path], table: Path) -> Provenance:
-    from stellarlib.models.stelib.design import CATALOG_BASES
 
     assets = [
         DataAsset(

@@ -12,7 +12,7 @@ the source publishes.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 import dataclasses
 from datetime import datetime, timezone
 import hashlib
@@ -66,10 +66,12 @@ class ProductDesign:
 
     @property
     def directory_name(self) -> str:
+        """The product's path relative to the database root."""
         return f"{self.family}/{self.collection}/{self.label}"
 
 
 class VerdictKind:
+    """The two-state part verdict vocabulary (plus its reasons)."""
     OK = "ok"
     MISSING = "missing"
     NONCONFORMING = "nonconforming"
@@ -88,6 +90,7 @@ class PartVerdict:
 
     @property
     def summary(self) -> str:
+        """ok, or the failure kind with its reasons."""
         if self.kind == VerdictKind.OK:
             return "ok"
         detail = "; ".join(self.reasons)
@@ -160,8 +163,8 @@ def fetch_streamed_part(
     part: PartDesign,
     directory: Path,
     *,
-    session=None,
-    log=print,
+    session: requests.Session | None = None,
+    log: Callable[[str], None] = print,
 ) -> Mapping:
     """Fetch one designed part over HTTP into its product directory.
 
@@ -238,6 +241,7 @@ class FamilyAdapter(Protocol):
         self, design: ProductDesign, part: PartDesign, directory: Path,
         manifest: Mapping, cache: SignatureCache | None = None,
     ) -> PartVerdict:
+        """Judge one designed part: ok, missing, or nonconforming."""
         ...
 
     def fetch_part(
@@ -246,8 +250,8 @@ class FamilyAdapter(Protocol):
         part: PartDesign,
         directory: Path,
         *,
-        session=None,
-        log=print,
+        session: requests.Session | None = None,
+        log: Callable[[str], None] = print,
     ) -> Mapping:
         """Fetch one missing part; returns its manifest parts entry.
 

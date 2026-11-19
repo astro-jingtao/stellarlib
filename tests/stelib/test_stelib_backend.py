@@ -10,6 +10,7 @@ import shutil
 
 import pytest
 
+import stellarlib
 from stellarlib.exceptions import MetadataConflictError, UnrecognizedFormatError
 from stellarlib.facade import StelibSpectra, construct
 from stellarlib.models.stelib.backend import read_stelib
@@ -133,7 +134,6 @@ class TestFacade:
             construct("stelib/2003")
 
     def test_open_grid_on_the_tree(self):
-        import stellarlib
 
         grid = stellarlib.open_grid(DATA, model="stelib/2003")
         assert len(grid) == 3

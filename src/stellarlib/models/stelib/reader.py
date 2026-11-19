@@ -24,6 +24,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import re
+from typing import Any
 
 from astropy.io import fits
 import numpy as np
@@ -97,7 +98,7 @@ def is_corrected_spectrum(path: str | Path) -> bool:
     return COR_SUFFIX_RE.search(Path(path).name) is not None
 
 
-def read_stelib_fits(source, name: str) -> NativeSpectrum:
+def read_stelib_fits(source: Any, name: str) -> NativeSpectrum:
     """Read one STELIB spectrum FITS verbatim.
 
     ``source`` is a path or open FITS payload; ``name`` is the member

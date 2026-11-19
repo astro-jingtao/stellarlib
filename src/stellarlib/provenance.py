@@ -40,6 +40,8 @@ class SourceClass(Enum):
 
 
 class SourceStatus(Enum):
+    """How far the source's availability was actually checked."""
+
     VERIFIED = "verified"  # retrieved and checksum-validated
     RETRIEVED = "retrieved"  # retrieved, not checksum-validated
     UNAVAILABLE = "unavailable"  # checked and unreachable
@@ -64,6 +66,7 @@ class SourceRecord:
             raise TypeError("status must be a SourceStatus")
 
     def to_dict(self) -> dict:
+        """The record as a JSON-ready mapping."""
         d = dataclasses.asdict(self)
         d["source_class"] = self.source_class.value
         d["status"] = self.status.value
@@ -71,6 +74,7 @@ class SourceRecord:
 
     @classmethod
     def from_dict(cls, d: dict) -> SourceRecord:
+        """Rebuild a SourceRecord from its dict form."""
         d = dict(d)
         d["source_class"] = SourceClass(d["source_class"])
         d["status"] = SourceStatus(d.get("status", "not_checked"))
@@ -90,6 +94,7 @@ class DataAsset:
     note: str | None = None
 
     def to_dict(self) -> dict:
+        """The asset as a JSON-ready mapping."""
         d = dataclasses.asdict(self)
         if self.source is not None:
             d["source"] = self.source.to_dict()
@@ -97,6 +102,7 @@ class DataAsset:
 
     @classmethod
     def from_dict(cls, d: dict) -> DataAsset:
+        """Rebuild a DataAsset from its dict form."""
         d = dict(d)
         if d.get("source") is not None:
             d["source"] = SourceRecord.from_dict(d["source"])
@@ -116,6 +122,7 @@ class SourceChain:
         object.__setattr__(self, "transformations", tuple(self.transformations))
 
     def to_dict(self) -> dict:
+        """The chain as a JSON-ready mapping."""
         return {
             "upstream_sources": [s.to_dict() for s in self.upstream_sources],
             "immediate_source": (
@@ -126,6 +133,7 @@ class SourceChain:
 
     @classmethod
     def from_dict(cls, d: dict) -> SourceChain:
+        """Rebuild a SourceChain from its dict form."""
         d = dict(d)
         d["upstream_sources"] = [
             SourceRecord.from_dict(s) for s in d.get("upstream_sources", [])
@@ -147,10 +155,12 @@ class Reference:
     note: str | None = None
 
     def to_dict(self) -> dict:
+        """The reference as a JSON-ready mapping."""
         return dataclasses.asdict(self)
 
     @classmethod
     def from_dict(cls, d: dict) -> Reference:
+        """Rebuild a Reference from its dict form."""
         return cls(**d)
 
 
@@ -177,6 +187,7 @@ class Provenance:
         object.__setattr__(self, "transformations", tuple(self.transformations))
 
     def to_dict(self) -> dict:
+        """The bundle as a JSON-ready mapping."""
         return {
             "data_sources": [s.to_dict() for s in self.data_sources],
             "assets": [a.to_dict() for a in self.assets],
@@ -188,6 +199,7 @@ class Provenance:
 
     @classmethod
     def from_dict(cls, d: dict) -> Provenance:
+        """Rebuild a Provenance from its dict form."""
         return cls(
             data_sources=tuple(
                 SourceRecord.from_dict(s) for s in d.get("data_sources", [])

@@ -29,6 +29,8 @@ import numpy as np
 from scipy.spatial import cKDTree
 
 from stellarlib.exceptions import UnsafeInterpolationError
+from stellarlib.native import NativeSpectrum
+from stellarlib.spectrum import Spectrum
 
 __all__ = [
     "InterpolationRecord",
@@ -42,6 +44,7 @@ _METHODS = ("multilinear", "voronoi")
 
 
 def interp_methods() -> tuple[str, ...]:
+    """The query methods the record vocabulary knows."""
     return _METHODS
 
 
@@ -66,6 +69,7 @@ class InterpolationRecord:
     note: str | None = None
 
     def to_dict(self) -> dict:
+        """The record as a JSON-ready mapping."""
         return {
             "method": self.method,
             "axes": list(self.axes),
@@ -175,7 +179,7 @@ def corner_weights(
         fractions[name] = fw
         # a degenerate axis pins both corner digits on its single value
         cell_step[name] = 1 if arrays[name].size > 1 else 0
-    for digits in np.ndindex(*(2,) * len(names)):
+    for corner, digits in enumerate(np.ndindex(*(2,) * len(names))):
         # C-order corner enumeration: first axis is most significant
         w_col = np.ones(n)
         flat = np.zeros(n, dtype=np.int64)
@@ -185,7 +189,6 @@ def corner_weights(
             flat += (cell_index[name] + digit * cell_step[name]) * strides[pos]
         idx[:, corner] = flat
         w[:, corner] = w_col
-        corner += 1
     return idx, w, tuple(clamped)
 
 
@@ -228,10 +231,10 @@ def voronoi_nearest(
 
 
 def resample_wavelengths(
-    spectrum,
+    spectrum: Spectrum,
     wavelength_out: Iterable[float],
     method: str = "linear",
-):
+) -> Spectrum:
     """Resample a spectrum's arrays onto a new wavelength grid.
 
     Linear interpolation in wavelength (second-order effects are negligible
@@ -240,7 +243,6 @@ def resample_wavelengths(
     The returned spectrum is a derived product: its provenance carries the
     transformation and it never masquerades as native data.
     """
-    from stellarlib.spectrum import Spectrum
 
     if not isinstance(spectrum, Spectrum):
         raise TypeError(f"expected a Spectrum, got {type(spectrum).__name__}")
@@ -283,9 +285,8 @@ def resample_wavelengths(
     provenance = spectrum.provenance
     new_provenance = dataclasses.replace(
         provenance,
-        transformations=provenance.transformations + (transformation,),
+        transformations=(*provenance.transformations, transformation),
     )
-    from stellarlib.native import NativeSpectrum
 
     new_native = NativeSpectrum(
         wavelength=new_wave,

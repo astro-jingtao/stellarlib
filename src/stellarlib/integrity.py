@@ -11,10 +11,12 @@ __all__ = ["sha256_bytes", "sha256_file", "verify_checksum"]
 
 
 def sha256_bytes(payload: bytes) -> str:
+    """The sha256 hex digest of an in-memory payload."""
     return hashlib.sha256(payload).hexdigest()
 
 
 def sha256_file(path: str | Path, chunk_size: int = 1 << 20) -> str:
+    """The sha256 hex digest of a file, read in chunks."""
     h = hashlib.sha256()
     with open(path, "rb") as fh:
         while chunk := fh.read(chunk_size):

@@ -20,7 +20,7 @@ from __future__ import annotations
 import io
 from pathlib import Path
 import re
-from typing import BinaryIO
+from typing import Any, BinaryIO
 
 from astropy.io import fits
 import numpy as np
@@ -85,7 +85,7 @@ def read_miles_fits(
         return _read_primary(hdul, name)
 
 
-def _read_primary(hdul, name: str) -> NativeSpectrum:
+def _read_primary(hdul: Any, name: str) -> NativeSpectrum:
     hdu = hdul[0]
     header = hdu.header
     if header.get("NAXIS") != 2 or header.get("NAXIS2") != 1:

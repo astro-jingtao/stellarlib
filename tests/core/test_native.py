@@ -11,13 +11,13 @@ from stellarlib.native import NativeSpectrum
 
 
 def _simple(**overrides) -> NativeSpectrum:
-    kwargs = dict(
-        wavelength=np.linspace(3000.0, 4000.0, 11),
-        flux=np.full(11, 1.5),
-        continuum=np.full(11, 1.6),
-        header=("# a comment",),
-        metadata={"teff": 5000.0},
-    )
+    kwargs = {
+        "wavelength": np.linspace(3000.0, 4000.0, 11),
+        "flux": np.full(11, 1.5),
+        "continuum": np.full(11, 1.6),
+        "header": ("# a comment",),
+        "metadata": {"teff": 5000.0},
+    }
     kwargs.update(overrides)
     return NativeSpectrum(**kwargs)
 

@@ -24,8 +24,11 @@ pattern applied to the catalog's own table.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
+import dataclasses
 from pathlib import Path
+
+import requests
 
 from stellarlib.database.design import (
     PartDesign,
@@ -115,6 +118,7 @@ def _expanded(source: str, table: Path) -> ProductDesign:
 
 
 class StelibAdapter:
+    """The STELIB family's database adapter: the one catalog-tree product."""
     family = "stelib"
 
     def designs(self, declaration: Mapping) -> Iterable[ProductDesign]:
@@ -131,6 +135,7 @@ class StelibAdapter:
         return [_phase_one(source)]
 
     def expand_design(self, design: ProductDesign, directory: Path) -> ProductDesign:
+        """Replace the phase-1 design once the product holds the upstream manifest part."""
         table = star_table_among([directory / TABLE_NAME])
         if table is None or not table.exists():
             return design  # phase one: the tree's top-level files only
@@ -140,6 +145,7 @@ class StelibAdapter:
     def design_of_manifest(
         self, manifest: Mapping, directory: Path
     ) -> ProductDesign | None:
+        """The official design a manifest describes (for registered products)."""
         section = manifest.get("family_section") or {}
         mirror = section.get("mirror")
         if mirror is None or mirror.get("catalog") != "III/232":
@@ -149,8 +155,6 @@ class StelibAdapter:
             return None
         design = _phase_one(source)
         if manifest.get("label") != design.label:
-            import dataclasses
-
             design = dataclasses.replace(design, label=manifest["label"])
         return design
 
@@ -162,6 +166,7 @@ class StelibAdapter:
         manifest: Mapping,
         cache: SignatureCache | None = None,
     ) -> PartVerdict:
+        """The generic two-state classification, shared by every family."""
         return classify_part_generic(design, part, directory, manifest, cache)
 
     def fetch_part(
@@ -170,9 +175,10 @@ class StelibAdapter:
         part: PartDesign,
         directory: Path,
         *,
-        session=None,
-        log=print,
+        session: requests.Session | None = None,
+        log: Callable[[str], None] = print,
     ) -> Mapping:
+        """Fetch one missing part over HTTP (streamed, hashed)."""
         if part.url is None:
             raise SourceUnavailableError(f"{part.name}: no fetch URL in the design")
         # spectrum parts live in the tree's cor_sp/ and obs_sp/

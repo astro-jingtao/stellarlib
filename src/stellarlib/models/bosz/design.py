@@ -27,16 +27,17 @@ retried on the next build.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 import dataclasses
 from pathlib import Path
 import re
+
+import requests
 
 from stellarlib.database.design import (
     PartDesign,
     PartVerdict,
     ProductDesign,
-    VerdictKind,
     classify_part_generic,
     fetch_streamed_part,
 )
@@ -127,7 +128,13 @@ def family_for(teff: int, logg: float) -> tuple[str, int]:
 
 
 def bosz_filename(
-    teff: int, logg: float, mh: float, am: float, cm: float, resolution: int
+    *,
+    teff: int,
+    logg: float,
+    mh: float,
+    am: float,
+    cm: float,
+    resolution: int,
 ) -> str:
     """The canonical filename of one node's spectrum (query-side naming)."""
     atmos, vmicro = family_for(teff, logg)
@@ -266,6 +273,7 @@ def _wave_design() -> ProductDesign:
 
 
 class BoszAdapter:
+    """The BOSZ family's database adapter: the 112 directory mirrors plus the wavelength grids."""
     family = "bosz"
 
     def designs(self, declaration: Mapping) -> Iterable[ProductDesign]:
@@ -323,6 +331,7 @@ class BoszAdapter:
     def design_of_manifest(
         self, manifest: Mapping, directory: Path
     ) -> ProductDesign | None:
+        """The official design a manifest describes (for registered products)."""
         section = manifest.get("family_section") or {}
         mirror = section.get("mirror")
         if mirror is None:
@@ -339,6 +348,7 @@ class BoszAdapter:
         self, design: ProductDesign, part: PartDesign, directory: Path,
         manifest: Mapping, cache: SignatureCache | None = None,
     ) -> PartVerdict:
+        """The generic two-state classification, shared by every family."""
         return classify_part_generic(design, part, directory, manifest, cache)
 
     def fetch_part(
@@ -347,9 +357,10 @@ class BoszAdapter:
         part: PartDesign,
         directory: Path,
         *,
-        session=None,
-        log=print,
+        session: requests.Session | None = None,
+        log: Callable[[str], None] = print,
     ) -> Mapping:
+        """Fetch one missing part over HTTP (streamed, hashed)."""
         if part.url is None:
             raise SourceUnavailableError(
                 f"{part.name}: no fetch URL in the design"
