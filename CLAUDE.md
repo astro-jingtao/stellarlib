@@ -31,14 +31,3 @@ README and the `docs/` tree; consult them before editing:
 - The no-transform principle bounds the native layer: transformations the unified layer needs for interpolation (wavelength resampling; aligning the rorig native-sampling spectra onto a shared grid) are permitted as explicit, provenance-recorded derived operations that never rewrite or replace the native files.
 - Public API surface is re-exported from `stellarlib/__init__.py`; keep the
   `__all__` list in sync.
-
-## Git
-
-- Autonomous-execution runs in this repository are authorized to stage
-  and commit their own completed units (conventional commit messages,
-  Co-Authored-By trailer), stated here by the user's own decision. Scope:
-  the stellarlib working tree only — never pushes, never history
-  rewrites, never other repositories or the database directory.
-- If the harness permission layer still declines a commit under this
-  authorization, follow its denial: leave the work in the working tree
-  and surface the change groups in the run's final report.
