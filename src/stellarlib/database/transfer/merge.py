@@ -31,7 +31,7 @@ import shutil
 import uuid
 
 from stellarlib.database.build import _apply_select
-from stellarlib.database.design import VerdictKind
+from stellarlib.database.design import PartDesign, ProductDesign, VerdictKind
 from stellarlib.database.inventory import refresh_inventory
 from stellarlib.database.manifest import read_manifest, write_manifest
 from stellarlib.database.scan import ProductReport, scan_database
@@ -122,8 +122,184 @@ def _copy_part_file(source_dir: Path, target_dir: Path, name: str) -> None:
     os.replace(tmp, dst)
 
 
+@dataclasses.dataclass(frozen=True)
+class _MergeCtx:
+    """The per-merge state the product policies share."""
+
+    target_root: Path
+    staging: Path
+    report: MergeReport
+    cache: SignatureCache
+    log: Callable[[str], None]
+
+
+def _ok_parts_of(
+    design: ProductDesign,
+    s_report: ProductReport,
+) -> list[PartDesign]:
+    """The source product's parts verified OK — the only parts a merge
+    migrates."""
+    return [
+        p for p in design.parts
+        if any(
+            v.part == p.name and v.kind == VerdictKind.OK
+            for v in s_report.verdicts
+        )
+    ]
+
+
+def _product_conflicts(
+    key: str,
+    ok_parts: list[PartDesign],
+    s_manifest: dict,
+    t_manifest: dict,
+    t_report: ProductReport,
+) -> list[MergeConflict]:
+    """The product's conflicting parts: an overlapping part archived on
+    both sides with disagreeing recorded shas — any one voids the whole
+    product for this merge (recorded, never resolved)."""
+    conflicts = []
+    for part in ok_parts:
+        t_verdict = next(
+            (v for v in t_report.verdicts if v.part == part.name), None
+        )
+        if t_verdict is None or t_verdict.kind == VerdictKind.MISSING:
+            continue
+        s_sha = _part_sha(s_manifest, part.name)
+        t_sha = _part_sha(t_manifest, part.name)
+        if s_sha and t_sha and s_sha != t_sha:
+            conflicts.append(MergeConflict(key, part.name, s_sha, t_sha))
+    return conflicts
+
+
+def _landed_part(
+    part_name: str,
+    key: str,
+    s_manifest: dict,
+    ctx: _MergeCtx,
+) -> None:
+    """One migrated part landed: unverify any cached claim about it, or
+    (verify mode) hash it against the source's recorded evidence. A
+    verify failure leaves the copied file in place unrecorded —
+    present-but-suspect, the scan's two-state judgment owns it."""
+    rel_path = f"{key}/{part_name}"
+    if ctx.report.verify:
+        digest = sha256_file(ctx.target_root / rel_path)
+        recorded = _part_sha(s_manifest, part_name)
+        if recorded and digest != recorded:
+            raise ValueError(
+                f"migrated {rel_path} fails its recorded sha256; "
+                "merge aborted for this product"
+            )
+        ctx.cache.remember(ctx.target_root / rel_path, digest)
+    else:
+        ctx.report.invalidated_cache_entries += ctx.cache.forget({rel_path})
+
+
+def _stage_whole_product(
+    s_report: ProductReport,
+    ok_parts: list[PartDesign],
+    s_manifest: dict,
+    ctx: _MergeCtx,
+) -> None:
+    """Land the product by staged whole-directory copy: its entire
+    recorded state (files + MANIFEST) arrives as one atomic unit."""
+    design = s_report.design
+    key = design.directory_name
+    stage = ctx.staging / uuid.uuid4().hex
+    stage.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(s_report.directory, stage)
+    staged_manifest = read_manifest(stage)
+    identity = (
+        staged_manifest.get("family"),
+        staged_manifest.get("release"),
+        staged_manifest.get("label"),
+    )
+    if identity != (design.family, s_manifest["release"], design.label):
+        ctx.report.identity_mismatches.append(key)
+        ctx.log(
+            f"skip {key}: staged manifest identity {identity} does "
+            "not match the source manifest"
+        )
+        return
+    if ctx.report.verify:
+        # hash the staged copy against the source's recorded evidence
+        # before it counts as merged
+        for part in ok_parts:
+            recorded = _part_sha(s_manifest, part.name)
+            if recorded and sha256_file(stage / part.name) != recorded:
+                raise ValueError(
+                    f"staged copy of {key}/{part.name} fails its "
+                    "recorded sha256; merge aborted for this product"
+                )
+    target_dir = ctx.target_root / key
+    target_dir.parent.mkdir(parents=True, exist_ok=True)
+    os.replace(stage, target_dir)
+    if ctx.report.verify:
+        for part in ok_parts:
+            recorded = _part_sha(s_manifest, part.name)
+            if recorded:
+                ctx.cache.remember(target_dir / part.name, recorded)
+    else:
+        # every file the copy brought: cache entries under this
+        # product's prefix are unverified claims until re-hashed here
+        ctx.report.invalidated_cache_entries += ctx.cache.forget_prefixes(
+            {f"{key}/"}
+        )
+    ctx.report.merged_products.append(key)
+    ctx.log(f"merged {key} (whole directory)")
+
+
+def _complete_missing_parts(
+    s_report: ProductReport,
+    t_report: ProductReport,
+    ok_parts: list[PartDesign],
+    s_manifest: dict,
+    ctx: _MergeCtx,
+) -> None:
+    """Complete the existing target product's misses part by part.
+
+    A part the target's own design does not know (its manifest holds
+    no entry) with no file on disk is a miss like any other — the copy
+    adds both; a part whose file sits there unrecorded is the
+    verifier's backfill territory, left alone.
+    """
+    design = s_report.design
+    key = design.directory_name
+    s_dir = s_report.directory
+    t_dir = t_report.directory
+    t_manifest = read_manifest(t_dir)
+    added = []
+    for part in ok_parts:
+        t_verdict = next(
+            (v for v in t_report.verdicts if v.part == part.name), None
+        )
+        if t_verdict is not None and t_verdict.kind != VerdictKind.MISSING:
+            continue
+        if t_verdict is None and (t_dir / part.name).exists():
+            continue
+        _copy_part_file(s_dir, t_dir, part.name)
+        _landed_part(part.name, key, s_manifest, ctx)
+        added.append(part.name)
+        ctx.report.completed_parts.append((key, part.name))
+    if added:
+        parts = dict(t_manifest.get("parts") or {})
+        for name in added:
+            parts[name] = (s_manifest.get("parts") or {}).get(name)
+        payload = dict(t_manifest)
+        payload["parts"] = parts
+        if (
+            "family_section" not in payload
+            and s_manifest.get("family_section")
+        ):
+            payload["family_section"] = s_manifest["family_section"]
+        write_manifest(t_dir, payload)
+        ctx.log(f"completed {key}: {len(added)} part(s)")
+    else:
+        ctx.report.kept_products.append(key)
+
+
 def _merge_product(
-    source_root: Path,
     target_root: Path,
     staging: Path,
     *,
@@ -133,23 +309,20 @@ def _merge_product(
     cache: SignatureCache,
     log: Callable[[str], None],
 ) -> None:
+    """Merge one product: judge the source and the target's state, then
+    apply the one policy that state allows — a staged whole-directory
+    copy when the target holds nothing, part-level completion of the
+    target's misses otherwise (invariants: module docstring)."""
     design = s_report.design
     key = design.directory_name
-    s_dir = s_report.directory
-    s_manifest = read_manifest(s_dir)
+    s_manifest = read_manifest(s_report.directory)
 
     if s_manifest.get("by_reference"):
         report.source_by_reference.append(key)
         log(f"skip {key}: registered by reference (its files are not in the source database)")
         return
 
-    ok_parts = [
-        p for p in design.parts
-        if any(
-            v.part == p.name and v.kind == VerdictKind.OK
-            for v in s_report.verdicts
-        )
-    ]
+    ok_parts = _ok_parts_of(design, s_report)
     if any(
         v.kind == VerdictKind.NONCONFORMING for v in s_report.verdicts
     ) or not ok_parts:
@@ -167,127 +340,26 @@ def _merge_product(
         log(f"skip {key}: target needs review, left untouched")
         return
 
-    # conflicts: an overlapping part archived on both sides with
-    # disagreeing recorded shas voids the whole product for this merge
     if t_dir is not None:
-        t_manifest = read_manifest(t_dir)
-        product_conflicts = []
-        for part in ok_parts:
-            t_verdict = next(
-                (v for v in t_report.verdicts if v.part == part.name), None
-            )
-            if t_verdict is None or t_verdict.kind == VerdictKind.MISSING:
-                continue
-            s_sha = _part_sha(s_manifest, part.name)
-            t_sha = _part_sha(t_manifest, part.name)
-            if s_sha and t_sha and s_sha != t_sha:
-                product_conflicts.append(
-                    MergeConflict(key, part.name, s_sha, t_sha)
-                )
-        if product_conflicts:
-            report.conflicts.extend(product_conflicts)
+        conflicts = _product_conflicts(
+            key, ok_parts, s_manifest, read_manifest(t_dir), t_report
+        )
+        if conflicts:
+            report.conflicts.extend(conflicts)
             log(f"skip {key}: sha conflict (recorded; target untouched)")
             return
 
-    def _landed(part_name: str) -> None:
-        """One migrated part landed: unverify any cached claim about it,
-        or (verify mode) hash it against the source's recorded evidence.
-        A verify failure leaves the copied file in place unrecorded —
-        present-but-suspect, the scan's two-state judgment owns it."""
-        rel_path = f"{key}/{part_name}"
-        if report.verify:
-            digest = sha256_file(target_root / rel_path)
-            recorded = _part_sha(s_manifest, part_name)
-            if recorded and digest != recorded:
-                raise ValueError(
-                    f"migrated {rel_path} fails its recorded sha256; "
-                    "merge aborted for this product"
-                )
-            cache.remember(target_root / rel_path, digest)
-        else:
-            report.invalidated_cache_entries += cache.forget({rel_path})
-
+    ctx = _MergeCtx(
+        target_root=target_root,
+        staging=staging,
+        report=report,
+        cache=cache,
+        log=log,
+    )
     if t_dir is None:
-        # staged whole-directory copy: the product's entire recorded
-        # state (files + MANIFEST) arrives as one atomic unit
-        stage = staging / uuid.uuid4().hex
-        stage.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(s_dir, stage)
-        staged_manifest = read_manifest(stage)
-        identity = (
-            staged_manifest.get("family"),
-            staged_manifest.get("release"),
-            staged_manifest.get("label"),
-        )
-        if identity != (design.family, s_manifest["release"], design.label):
-            report.identity_mismatches.append(key)
-            log(
-                f"skip {key}: staged manifest identity {identity} does "
-                "not match the source manifest"
-            )
-            return
-        if report.verify:
-            # hash the staged copy against the source's recorded evidence
-            # before it counts as merged
-            for part in ok_parts:
-                recorded = _part_sha(s_manifest, part.name)
-                if recorded and sha256_file(stage / part.name) != recorded:
-                    raise ValueError(
-                        f"staged copy of {key}/{part.name} fails its "
-                        "recorded sha256; merge aborted for this product"
-                    )
-        target_dir = target_root / key
-        target_dir.parent.mkdir(parents=True, exist_ok=True)
-        os.replace(stage, target_dir)
-        if report.verify:
-            for part in ok_parts:
-                recorded = _part_sha(s_manifest, part.name)
-                if recorded:
-                    cache.remember(target_dir / part.name, recorded)
-        else:
-            # every file the copy brought: cache entries under this
-            # product's prefix are unverified claims until re-hashed here
-            report.invalidated_cache_entries += cache.forget_prefixes(
-                {f"{key}/"}
-            )
-        report.merged_products.append(key)
-        log(f"merged {key} (whole directory)")
-        return
-
-    # the target directory exists: part-level completion of its misses.
-    # A part the target's own design does not know (its manifest holds
-    # no entry) with no file on disk is a miss like any other — the
-    # copy adds both; a part whose file sits there unrecorded is the
-    # verifier's backfill territory, left alone.
-    t_manifest = read_manifest(t_dir)
-    added = []
-    for part in ok_parts:
-        t_verdict = next(
-            (v for v in t_report.verdicts if v.part == part.name), None
-        )
-        if t_verdict is not None and t_verdict.kind != VerdictKind.MISSING:
-            continue
-        if t_verdict is None and (t_dir / part.name).exists():
-            continue
-        _copy_part_file(s_dir, t_dir, part.name)
-        _landed(part.name)
-        added.append(part.name)
-        report.completed_parts.append((key, part.name))
-    if added:
-        parts = dict(t_manifest.get("parts") or {})
-        for name in added:
-            parts[name] = (s_manifest.get("parts") or {}).get(name)
-        payload = dict(t_manifest)
-        payload["parts"] = parts
-        if (
-            "family_section" not in payload
-            and s_manifest.get("family_section")
-        ):
-            payload["family_section"] = s_manifest["family_section"]
-        write_manifest(t_dir, payload)
-        log(f"completed {key}: {len(added)} part(s)")
+        _stage_whole_product(s_report, ok_parts, s_manifest, ctx)
     else:
-        report.kept_products.append(key)
+        _complete_missing_parts(s_report, t_report, ok_parts, s_manifest, ctx)
 
 
 def merge_database(
@@ -354,7 +426,6 @@ def merge_database(
             if s_product.design.directory_name not in selected:
                 continue
             _merge_product(
-                source,
                 target,
                 staging,
                 s_report=s_product,

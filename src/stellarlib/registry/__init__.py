@@ -267,15 +267,47 @@ def _choose(entry: dict, dynamic: Mapping[str, Any]) -> dict | None:
     return entry
 
 
-def _spec_from_entry(
-    name: str, chosen: Mapping[str, Any], dynamic: Mapping[str, Any]
-) -> ParameterSpec:
-    vocab = {p["name"]: p for p in _registry()["physical_parameters"]}[name]
+def _base_kwargs(chosen: Mapping[str, Any], vocab: dict) -> dict[str, Any]:
+    """The copyable scalar attributes (unit, convention, description,
+    status) — the entry's value overrides the registry vocabulary's."""
     kwargs: dict[str, Any] = {}
     for key in ("unit", "convention", "description", "status"):
         value = chosen.get(key, vocab.get(key))
         if value is not None:
             kwargs[key] = value
+    return kwargs
+
+
+def _entry_value(
+    name: str,
+    chosen: Mapping[str, Any],
+    dynamic: Mapping[str, Any],
+    singular: str,
+) -> Any:
+    """Resolve one entry's value form (``value``/``value_from``) or
+    values form (``values``/``values_from``) against the reader-supplied
+    dynamic mapping; None when the entry states neither form."""
+    from_key = f"{singular}_from"
+    if from_key in chosen:
+        key = chosen[from_key]
+        if key not in dynamic:
+            raise KeyError(
+                f"parameter {name!r} wants {from_key} {key!r}, which the "
+                "reader did not supply"
+            )
+        value = dynamic[key]
+    elif singular in chosen:
+        value = chosen[singular]
+    else:
+        return None
+    return tuple(value) if singular == "values" else value
+
+
+def _spec_from_entry(
+    name: str, chosen: Mapping[str, Any], dynamic: Mapping[str, Any]
+) -> ParameterSpec:
+    vocab = {p["name"]: p for p in _registry()["physical_parameters"]}[name]
+    kwargs = _base_kwargs(chosen, vocab)
     if "source" in chosen:
         kwargs["source"] = ParameterSource(chosen["source"])
     if "depends_on" in chosen:
@@ -284,29 +316,12 @@ def _spec_from_entry(
         kwargs["relation"] = chosen["relation"]
     if "relation_parameters" in chosen:
         kwargs["relation_parameters"] = dict(chosen["relation_parameters"])
-
-    if "value_from" in chosen:
-        key = chosen["value_from"]
-        if key not in dynamic:
-            raise KeyError(
-                f"parameter {name!r} wants value_from {key!r}, which the "
-                "reader did not supply"
-            )
-        kwargs["value"] = dynamic[key]
-    elif "value" in chosen:
-        kwargs["value"] = chosen["value"]
-
-    if "values_from" in chosen:
-        key = chosen["values_from"]
-        if key not in dynamic:
-            raise KeyError(
-                f"parameter {name!r} wants values_from {key!r}, which the "
-                "reader did not supply"
-            )
-        kwargs["values"] = tuple(dynamic[key])
-    elif "values" in chosen:
-        kwargs["values"] = tuple(chosen["values"])
-
+    value = _entry_value(name, chosen, dynamic, "value")
+    if value is not None:
+        kwargs["value"] = value
+    values = _entry_value(name, chosen, dynamic, "values")
+    if values is not None:
+        kwargs["values"] = values
     return ParameterSpec(name=name, role=ParameterRole(chosen["role"]), **kwargs)
 
 

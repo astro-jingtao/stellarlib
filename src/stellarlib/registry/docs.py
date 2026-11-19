@@ -7,6 +7,8 @@ and is copied into every built database as a self-containment snapshot.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from stellarlib.registry import load_registry
 
 __all__ = ["render_documentation"]
@@ -18,6 +20,14 @@ _ROLE_LABELS = {
     "implicit": "implicit (used by the model, not recoverable)",
     "unknown": "unknown (not verified)",
     "not_applicable": "not applicable under this physics",
+}
+
+_BACKEND_TITLES = {"bosz": "BOSZ 2024", "tlusty": "TLUSTY OSTAR2002 / BSTAR2006"}
+
+_PRODUCT_TITLES = {
+    "resampled_spectra": "Resampled spectra (`*_resam.txt.gz`)",
+    "ostar2002": "OSTAR2002 optical spectra (`*.vis.7.gz`)",
+    "bstar2006": "BSTAR2006 optical spectra (`*.vis.7.gz`)",
 }
 
 
@@ -48,6 +58,78 @@ def _escape(text: str | None) -> str:
     if not text:
         return "—"
     return text.replace("|", "\\|").replace("\n", " ")
+
+
+def _render_product(
+    product_key: str,
+    product: dict,
+    add: Callable[[str], None],
+) -> None:
+    """One product's section: notes, the field-mapping table, the
+    physical-parameter table."""
+    add(
+        f"### {_PRODUCT_TITLES.get(product_key, product_key)} "
+        f"(`{product_key}`)"
+    )
+    add("")
+    for note in product.get("notes", []):
+        add(f"- {note}")
+    if product.get("notes"):
+        add("")
+
+    add("#### Field mappings")
+    add("")
+    add("| Unified field | Native source | Origin | Transformation | Notes |")
+    add("|---|---|---|---|---|")
+    for m in product["field_mappings"]:
+        native = m.get("native")
+        native_text = f"`{native}`" if native else "—"
+        add(
+            f"| `{m['unified']}` | {native_text} | {m['origin']} "
+            f"| {_escape(m.get('transformation'))} "
+            f"| {_escape(m.get('description'))} |"
+        )
+    add("")
+
+    add("#### Physical parameters")
+    add("")
+    add("| Parameter | Role | Value / source | Notes |")
+    add("|---|---|---|---|")
+    for entry in product["parameters"]:
+        role = _ROLE_LABELS.get(entry.get("role", ""), entry.get("role", "—"))
+        notes = entry.get("description") or entry.get("status") or ""
+        add(
+            f"| `{entry['name']}` | {role} "
+            f"| {_escape(_value_source(entry))} | {_escape(notes)} |"
+        )
+    add("")
+
+
+def _render_backend(
+    name: str,
+    backend: dict,
+    add: Callable[[str], None],
+) -> None:
+    """One backend family's section: identity, notes, every product, and
+    the scientific references."""
+    add(f"## {_BACKEND_TITLES.get(name, name)} (`{name}`)")
+    add("")
+    add(f"Field mapping version: `{backend['mapping_version']}`.")
+    add("")
+    for note in backend["notes"]:
+        add(f"- {note}")
+    add("")
+
+    for product_key, product in backend["products"].items():
+        _render_product(product_key, product, add)
+
+    add("### Scientific references")
+    add("")
+    for ref in backend["references"]:
+        citation = _escape(ref["citation"])
+        bibcode = ref.get("bibcode")
+        add(f"- {citation}" + (f" (bibcode `{bibcode}`)" if bibcode else ""))
+    add("")
 
 
 def render_documentation() -> str:
@@ -114,65 +196,7 @@ def render_documentation() -> str:
         )
     add("")
 
-    titles = {"bosz": "BOSZ 2024", "tlusty": "TLUSTY OSTAR2002 / BSTAR2006"}
-    product_titles = {
-        "resampled_spectra": "Resampled spectra (`*_resam.txt.gz`)",
-        "ostar2002": "OSTAR2002 optical spectra (`*.vis.7.gz`)",
-        "bstar2006": "BSTAR2006 optical spectra (`*.vis.7.gz`)",
-    }
     for name, backend in reg["backends"].items():
-        add(f"## {titles.get(name, name)} (`{name}`)")
-        add("")
-        add(f"Field mapping version: `{backend['mapping_version']}`.")
-        add("")
-        for note in backend["notes"]:
-            add(f"- {note}")
-        add("")
-
-        for product_key, product in backend["products"].items():
-            add(
-                f"### {product_titles.get(product_key, product_key)} "
-                f"(`{product_key}`)"
-            )
-            add("")
-            for note in product.get("notes", []):
-                add(f"- {note}")
-            if product.get("notes"):
-                add("")
-
-            add("#### Field mappings")
-            add("")
-            add("| Unified field | Native source | Origin | Transformation | Notes |")
-            add("|---|---|---|---|---|")
-            for m in product["field_mappings"]:
-                native = m.get("native")
-                native_text = f"`{native}`" if native else "—"
-                add(
-                    f"| `{m['unified']}` | {native_text} | {m['origin']} "
-                    f"| {_escape(m.get('transformation'))} "
-                    f"| {_escape(m.get('description'))} |"
-                )
-            add("")
-
-            add("#### Physical parameters")
-            add("")
-            add("| Parameter | Role | Value / source | Notes |")
-            add("|---|---|---|---|")
-            for entry in product["parameters"]:
-                role = _ROLE_LABELS.get(entry.get("role", ""), entry.get("role", "—"))
-                notes = entry.get("description") or entry.get("status") or ""
-                add(
-                    f"| `{entry['name']}` | {role} "
-                    f"| {_escape(_value_source(entry))} | {_escape(notes)} |"
-                )
-            add("")
-
-        add("### Scientific references")
-        add("")
-        for ref in backend["references"]:
-            citation = _escape(ref["citation"])
-            bibcode = ref.get("bibcode")
-            add(f"- {citation}" + (f" (bibcode `{bibcode}`)" if bibcode else ""))
-        add("")
+        _render_backend(name, backend, add)
 
     return "\n".join(lines)

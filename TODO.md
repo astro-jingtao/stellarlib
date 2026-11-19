@@ -3,35 +3,24 @@
 Design and feature work deliberately not yet done. Every item names the
 gap and the constraint any solution must respect; none of these are bugs.
 
-## ruff full-compliance pass — remainder is the complexity family only
+## ruff full-compliance pass — remainder is two public-signature designs
 
-- The 2026-11-18 seed left 409 findings; the 2026-11-19 sweep cleared
-  383 of them in the code, no rule edits, no `noqa`: the mechanical
+- The 2026-11-18 seed left 409 findings; the 2026-11-19 sweeps cleared
+  all but 3 in the code, no rule edits, no `noqa`: the mechanical
   families (imports, docstrings, annotations, pytest style, redundant
-  constructs) are at zero, including the 96 function-local imports
-  (hoisted; the two same-name parse_filename functions in build.py were
-  disambiguated with an alias).
-- 26 findings remain, all C901/PLR09xx on the same structural theme:
-  long functions and wide signatures in the fetch/merge machinery and
-  the family readers. Solving them is decomposition work, never
-  suppression; the concrete plans:
-  - `_build_product` (complexity 34, 88 statements) — extract the
-    scan/classify pass, the sequential fetch, and the manifest-flush
-    bookkeeping into helpers around the existing nested closures.
-  - `_merge_product` (26, 85) — extract the staged-copy path and the
-    into-existing-product path (they are two policies sharing a
-    prologue).
-  - `register_local_product` (19) — move the per-family branch table
-    (recognizer + collection/release) into a module-level mapping.
-  - `read_bosz`/`read_miles`/`read_stelib` — extract the
-    index/parse/nodes phases like the basel backend already does.
-  - `scan_database`, `corner_weights`, `_validate`, `_spec_from_entry`,
-    `render_documentation`, `build_database`, `_verify_product`,
-    `_fetch_all_parallel` — moderate extractions, same pattern.
-  - `empty_manifest` (10 keyword-only args) and
-    `BoszSpectra.construct` (10) — the arguments ARE the manifest
-    schema / the family's option surface; resolving means a parameter
-    object (a design change to public signatures), decide separately.
+  constructs) are at zero, and the complexity family's decomposition
+  work is done — the fetch/merge state machines (`_build_product`,
+  `_merge_product`, `_verify_product`, `register_local_product`,
+  `scan_database`, `build_database`), the family readers
+  (`read_bosz`/`read_miles`/`read_stelib`), `corner_weights`, and the
+  registry rendering all extract their phases into module-level
+  helpers now.
+- The 3 findings that remain are one design decision each, not
+  suppression candidates: `empty_manifest` (10 keyword-only args — the
+  arguments ARE the manifest schema) and `BoszSpectra.construct` (9
+  positional of 9 — the arguments ARE the family's option surface).
+  Resolving them means a parameter object, a change to public
+  signatures; decide separately.
 
 ## Multi-version / multi-platform test CI — not yet started
 

@@ -54,7 +54,12 @@ from stellarlib.database.manifest import (
     read_manifest,
     write_manifest,
 )
-from stellarlib.database.scan import ADAPTERS, enumerate_designs, scan_database
+from stellarlib.database.scan import (
+    ADAPTERS,
+    DatabaseReport,
+    enumerate_designs,
+    scan_database,
+)
 from stellarlib.database.signature_cache import SignatureCache
 from stellarlib.exceptions import SourceUnavailableError
 from stellarlib.integrity import sha256_file
@@ -158,6 +163,239 @@ def _format_of(family: str) -> str:
 _MANIFEST_FLUSH_PARTS = 2000
 
 
+def _product_manifest(design: ProductDesign, directory: Path) -> dict:
+    """The product's manifest: what a previous pass left, or the fresh
+    official-package record."""
+    if (directory / "MANIFEST.json").exists():
+        return read_manifest(directory)
+    return empty_manifest(
+        family=design.family,
+        release=_release_of(design.family, design.collection),
+        label=design.label,
+        kind=design.kind,
+        source_class="official_archive",
+        note="whole official package: fetched exactly as the source "
+        "publishes it (a directory mirror or an archive file)",
+        format=_format_of(design.family),
+        references=[r.citation for r in references(design.family)],
+        family_section={"mirror": dict(design.facts)},
+    )
+
+
+def _expands_design(part: PartDesign, entry: dict) -> bool:
+    """Whether one arrived part expands the design: an upstream manifest
+    of the directory (the official bulkdl script; for rorig also the
+    directory index) now enumerates every file it lists."""
+    return part.role in ("bulk_manifest", "directory_index") and (
+        "sha256" in entry
+    )
+
+
+class _ManifestRecorder:
+    """Record part arrivals into a manifest, flushing in chunks.
+
+    The streaming hash of a fetch is the file's sha256: recording it
+    against the file's quick signature saves the first post-fetch
+    classification a full read. A mirror product fetches tens of
+    thousands of parts in ONE pass, and a transport failure mid-pass
+    would otherwise leave every arrived file present-but-unrecorded
+    (classified ok with no integrity evidence, never re-verified); a
+    chunked flush bounds that loss window at _MANIFEST_FLUSH_PARTS
+    arrivals without paying a JSON rewrite per part.
+    """
+
+    def __init__(
+        self,
+        directory: Path,
+        manifest: dict,
+        cache: SignatureCache | None,
+    ) -> None:
+        self.directory = directory
+        self.manifest = manifest
+        self.cache = cache
+        self.arrived = 0
+
+    def __call__(self, part: PartDesign, entry: dict) -> bool:
+        """Record one arrival; True when it expands the design."""
+        self.manifest["parts"][part.name] = entry
+        if self.cache is not None and "sha256" in entry:
+            self.cache.remember(self.directory / part.name, entry["sha256"])
+        self.arrived += 1
+        if self.arrived % _MANIFEST_FLUSH_PARTS == 0:
+            write_manifest(self.directory, self.manifest)
+            if self.cache is not None:
+                self.cache.save_if_dirty()
+        return _expands_design(part, entry)
+
+
+def _classify_pass(
+    design: ProductDesign,
+    adapter: FamilyAdapter,
+    directory: Path,
+    manifest: dict,
+    *,
+    cache: SignatureCache | None,
+    log: Callable[[str], None],
+) -> list[tuple[ProductDesign, PartVerdict, object]]:
+    """One scan/classify pass: the parts still missing, or [] when the
+    product holds nonconforming parts.
+
+    Invariant: a product with nonconforming parts is never completed by
+    the builder — checksum validity proves integrity, not design
+    membership.
+    """
+    verdicts = [
+        adapter.classify_part(design, part, directory, manifest, cache)
+        for part in design.parts
+    ]
+    bad = [v for v in verdicts if v.kind == VerdictKind.NONCONFORMING]
+    if bad:
+        log(
+            f"NOTICE {design.directory_name}: {len(bad)} nonconforming "
+            f"part(s) ({'; '.join(v.summary for v in bad[:3])}) — "
+            "product left for human review, nothing fetched"
+        )
+        write_manifest(directory, manifest)
+        return []
+    return [
+        (design, v, p) for v, p in zip(verdicts, design.parts)
+        if v.kind == VerdictKind.MISSING
+    ]
+
+
+def _fetch_part(
+    adapter: FamilyAdapter,
+    directory: Path,
+    log: Callable[[str], None],
+    pending_item: tuple,
+    session_of: Callable[[], requests.Session],
+) -> tuple:
+    """Fetch one pending part; returns (part, manifest entry)."""
+    current, _verdict, part = pending_item
+    log(f"  fetch {part.name}")
+    entry = dict(
+        adapter.fetch_part(
+            current, part, directory, session=session_of(), log=log
+        )
+    )
+    return part, entry
+
+
+def _fetch_sequential(
+    pending: list,
+    session: requests.Session,
+    adapter: FamilyAdapter,
+    directory: Path,
+    *,
+    log: Callable[[str], None],
+    record: _ManifestRecorder,
+) -> bool:
+    """One strictly sequential fetch pass; True when an arrival expanded
+    the design — the pass then ends early, and the next pass covers the
+    files the arrival enumerates."""
+    for pending_item in pending:
+        try:
+            part, entry = _fetch_part(
+                adapter, directory, log, pending_item, lambda: session
+            )
+        except Exception:
+            # same contract as the parallel path: persist what did
+            # arrive, then fail loudly
+            write_manifest(directory, record.manifest)
+            raise
+        if record(part, entry):
+            return True
+    return False
+
+
+class _SessionPool:
+    """Per-worker-thread fetch sessions for one parallel pass."""
+
+    def __init__(
+        self, session_factory: Callable[[], requests.Session] | None
+    ) -> None:
+        self._factory = session_factory
+        self._local = threading.local()
+        self._created: list[requests.Session] = []
+
+    def session(self) -> requests.Session:
+        """This thread's session, created on first use."""
+        own = getattr(self._local, "session", None)
+        if own is None:
+            own = (
+                _new_fetch_session()
+                if self._factory is None
+                else self._factory()
+            )
+            self._created.append(own)
+            self._local.session = own
+        return own
+
+    def close_all(self) -> None:
+        """Close every session the pool created."""
+        for own in self._created:
+            closer = getattr(own, "close", None)
+            if closer is not None:
+                closer()
+
+
+def _fetch_parallel(
+    pending: list,
+    workers: int,
+    session_factory: Callable[[], requests.Session] | None,
+    adapter: FamilyAdapter,
+    directory: Path,
+    *,
+    log: Callable[[str], None],
+    record: _ManifestRecorder,
+) -> bool:
+    """One parallel fetch pass (``workers`` threads, each holding its
+    own session); True when an arrival expanded the design.
+
+    The first failure fails the run loudly (the same contract as the
+    sequential path); the rest of the batch drains — every part fetch
+    is atomic, so a drained batch leaves only complete files. What did
+    arrive is persisted before the raise: the next run resumes with
+    full integrity records for every present file.
+    """
+    abort = threading.Event()
+    pool = _SessionPool(session_factory)
+
+    def fetch_or_abort(pending_item: tuple) -> tuple:
+        if abort.is_set():
+            raise SourceUnavailableError(
+                f"{pending_item[2].name}: fetch batch aborted after an "
+                "earlier fetch failure"
+            )
+        return _fetch_part(adapter, directory, log, pending_item, pool.session)
+
+    expanded = False
+    failure: BaseException | None = None
+    try:
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = [executor.submit(fetch_or_abort, item) for item in pending]
+            for future in as_completed(futures):
+                if future.cancelled():
+                    continue
+                try:
+                    part, entry = future.result()
+                except Exception as exc:
+                    if failure is None:
+                        failure = exc
+                        abort.set()
+                        for other in futures:
+                            other.cancel()
+                    continue
+                if record(part, entry):
+                    expanded = True
+    finally:
+        pool.close_all()
+    if failure is not None:
+        write_manifest(directory, record.manifest)
+        raise failure
+    return expanded
+
+
 def _build_product(
     design: ProductDesign,
     adapter: FamilyAdapter,
@@ -178,181 +416,33 @@ def _build_product(
     signature cache (see :func:`build_database` for what it does)."""
     directory = root / design.family / design.collection / design.label
     directory.mkdir(parents=True, exist_ok=True)
-    manifest_path = directory / "MANIFEST.json"
-    if manifest_path.exists():
-        manifest = read_manifest(directory)
-    else:
-        manifest = empty_manifest(
-            family=design.family,
-            release=_release_of(design.family, design.collection),
-            label=design.label,
-            kind=design.kind,
-            source_class="official_archive",
-            note="whole official package: fetched exactly as the source "
-            "publishes it (a directory mirror or an archive file)",
-            format=_format_of(design.family),
-            references=[r.citation for r in references(design.family)],
-            family_section={"mirror": dict(design.facts)},
-        )
+    manifest = _product_manifest(design, directory)
     manifest.setdefault("family_section", {}).setdefault(
         "mirror", dict(design.facts)
     )
-
     design = adapter.expand_design(design, directory)
-
-    def _missing() -> list[tuple[ProductDesign, PartVerdict, object]]:
-        verdicts = [
-            adapter.classify_part(design, part, directory, manifest, cache)
-            for part in design.parts
-        ]
-        bad = [v for v in verdicts if v.kind == VerdictKind.NONCONFORMING]
-        if bad:
-            # invariant: a product with nonconforming parts is never
-            # completed by the builder — checksum validity proves
-            # integrity, not design membership
-            log(
-                f"NOTICE {design.directory_name}: {len(bad)} nonconforming "
-                f"part(s) ({'; '.join(v.summary for v in bad[:3])}) — "
-                "product left for human review, nothing fetched"
-            )
-            write_manifest(directory, manifest)
-            return []
-        return [
-            (design, v, p) for v, p in zip(verdicts, design.parts)
-            if v.kind == VerdictKind.MISSING
-        ]
-
-    def _expands_design(part: PartDesign, entry: dict) -> bool:
-        return part.role in ("bulk_manifest", "directory_index") and (
-            "sha256" in entry
-        )
-
-    def _record(part: PartDesign, entry: dict) -> bool:
-        manifest["parts"][part.name] = entry
-        # the streaming hash of a fetch is the file's sha256: recording
-        # it against the file's quick signature saves the first
-        # post-fetch classification a full read
-        if cache is not None and "sha256" in entry:
-            cache.remember(directory / part.name, entry["sha256"])
-        # persist the manifest in chunks as parts arrive: a mirror
-        # product fetches tens of thousands of parts in ONE pass, and a
-        # transport failure mid-pass would otherwise leave every
-        # arrived file present-but-unrecorded (classified ok with no
-        # integrity evidence, never re-verified).  A chunked flush
-        # bounds that loss window at _MANIFEST_FLUSH_PARTS arrivals
-        # without paying a JSON rewrite per part.
-        _record.arrived += 1
-        if _record.arrived % _MANIFEST_FLUSH_PARTS == 0:
-            write_manifest(directory, manifest)
-            if cache is not None:
-                cache.save_if_dirty()
-        # an upstream manifest of the directory has arrived (the
-        # official bulkdl script; for rorig also the directory index):
-        # the design now enumerates every file they list
-        return _expands_design(part, entry)
-
-    _record.arrived = 0
-
-    def _fetch_one(
-        pending_item: tuple, session_of: Callable[[], requests.Session]
-    ) -> tuple:
-        current, _verdict, part = pending_item
-        log(f"  fetch {part.name}")
-        entry = dict(
-            adapter.fetch_part(
-                current, part, directory, session=session_of(), log=log
-            )
-        )
-        return part, entry
-
-    def _fetch_all(pending: list) -> bool:
-        nonlocal design
-        if workers <= 1:
-            for pending_item in pending:
-                try:
-                    part, entry = _fetch_one(pending_item, lambda: session)
-                except Exception:
-                    # same contract as the parallel path: persist what
-                    # did arrive, then fail loudly
-                    write_manifest(directory, manifest)
-                    raise
-                if _record(part, entry):
-                    design = adapter.expand_design(design, directory)
-                    return True
-            return False
-        return _fetch_all_parallel(pending)
-
-    def _fetch_all_parallel(pending: list) -> bool:
-        nonlocal design
-        abort = threading.Event()
-        local = threading.local()
-        created: list = []
-
-        def worker_session() -> requests.Session:
-            own = getattr(local, "session", None)
-            if own is None:
-                own = (
-                    _new_fetch_session()
-                    if session_factory is None
-                    else session_factory()
-                )
-                created.append(own)
-                local.session = own
-            return own
-
-        def fetch_or_abort(pending_item: tuple) -> tuple:
-            if abort.is_set():
-                raise SourceUnavailableError(
-                    f"{pending_item[2].name}: fetch batch aborted after an "
-                    "earlier fetch failure"
-                )
-            return _fetch_one(pending_item, worker_session)
-
-        expanded = False
-        failure: BaseException | None = None
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            futures = [pool.submit(fetch_or_abort, item) for item in pending]
-            for future in as_completed(futures):
-                if future.cancelled():
-                    continue
-                try:
-                    part, entry = future.result()
-                except Exception as exc:
-                    if failure is None:
-                        # first failure fails the run loudly (the same
-                        # contract as the sequential path); the rest of
-                        # the batch drains — every part fetch is atomic,
-                        # so a drained batch leaves only complete files
-                        failure = exc
-                        abort.set()
-                        for other in futures:
-                            other.cancel()
-                    continue
-                if _record(part, entry):
-                    expanded = True
-        for own in created:
-            closer = getattr(own, "close", None)
-            if closer is not None:
-                closer()
-        if failure is not None:
-            # the batch has drained: persist what did arrive before the
-            # loud failure — the next run resumes with full integrity
-            # records for every present file
-            write_manifest(directory, manifest)
-            raise failure
-        if expanded:
-            design = adapter.expand_design(design, directory)
-            return True
-        return False
+    record = _ManifestRecorder(directory, manifest, cache)
 
     while True:
-        pending = _missing()
+        pending = _classify_pass(
+            design, adapter, directory, manifest, cache=cache, log=log
+        )
         if not pending:
             break
         # a pass ends early only when a bulk manifest part arrives and
         # the design expands; the next pass then covers the listed files
-        if not _fetch_all(pending):
+        if workers <= 1:
+            expanded = _fetch_sequential(
+                pending, session, adapter, directory, log=log, record=record
+            )
+        else:
+            expanded = _fetch_parallel(
+                pending, workers, session_factory, adapter, directory,
+                log=log, record=record,
+            )
+        if not expanded:
             break
+        design = adapter.expand_design(design, directory)
     write_manifest(directory, manifest)
     if cache is not None:
         cache.save_if_dirty()
@@ -374,6 +464,71 @@ def _apply_select(names: Iterable[str], patterns: list[str] | None) -> list[str]
             f"declared: {names}"
         )
     return tuple(n for n in names if any(fnmatch(n, pat) for pat in patterns))
+
+
+def _check_fetch_mode(
+    session: requests.Session | None,
+    session_factory: Callable[[], requests.Session] | None,
+    workers: int,
+) -> None:
+    """Validate the fetch-mode argument combination (see
+    :func:`build_database`)."""
+    if workers < 1:
+        raise ValueError(f"workers must be >= 1; got {workers}")
+    if session is not None and workers > 1:
+        raise ValueError(
+            "session= serves the sequential path (workers=1); for "
+            "workers > 1 pass session_factory= — each worker thread "
+            "holds its own session"
+        )
+    if session_factory is not None and workers <= 1:
+        raise ValueError(
+            "session_factory= serves the parallel path (workers > 1); "
+            "the sequential path injects its single session via session="
+        )
+
+
+def _report_dry_run(
+    report: DatabaseReport,
+    patterns: list[str] | None,
+    log: Callable[[str], None],
+) -> None:
+    """Log the dry-run plan: per-product state plus totals. Touches
+    nothing on disk."""
+    chosen = _apply_select([p.label_path for p in report.products], patterns)
+    by_name = {p.label_path: p for p in report.products}
+    shown = [by_name[name] for name in chosen]
+    for product in shown:
+        missing = [
+            v for v in product.verdicts if v.kind == VerdictKind.MISSING
+        ]
+        log(
+            f"{product.label_path}: {product.state} "
+            f"({len(missing)} part(s) to fetch)"
+        )
+    if patterns is not None:
+        log(
+            f"selection: {len(shown)} of {len(report.products)} "
+            "declared product(s) match select"
+        )
+    missing_parts = sum(
+        1
+        for p in shown
+        for v in p.verdicts
+        if v.kind == VerdictKind.MISSING
+    )
+    nonconforming = sum(
+        1
+        for p in shown
+        for v in p.verdicts
+        if v.kind == VerdictKind.NONCONFORMING
+    )
+    log(
+        f"total: {len(shown)} product(s), "
+        f"{missing_parts} missing part(s), "
+        f"{nonconforming} nonconforming (manual "
+        "review, never auto-fetched)"
+    )
 
 
 def build_database(
@@ -428,19 +583,7 @@ def build_database(
     ``workers > 1``.
     """
     root = Path(database)
-    if workers < 1:
-        raise ValueError(f"workers must be >= 1; got {workers}")
-    if session is not None and workers > 1:
-        raise ValueError(
-            "session= serves the sequential path (workers=1); for "
-            "workers > 1 pass session_factory= — each worker thread "
-            "holds its own session"
-        )
-    if session_factory is not None and workers <= 1:
-        raise ValueError(
-            "session_factory= serves the parallel path (workers > 1); "
-            "the sequential path injects its single session via session="
-        )
+    _check_fetch_mode(session, session_factory, workers)
     merged = _merge_designs(root, declarations)
     if not merged:
         raise ValueError(
@@ -458,40 +601,7 @@ def build_database(
             declarations=list(declarations or []),
             signature_cache=SignatureCache(root, writable=False),
         )
-        chosen = _apply_select([p.label_path for p in report.products], patterns)
-        by_name = {p.label_path: p for p in report.products}
-        shown = [by_name[name] for name in chosen]
-        for product in shown:
-            missing = [
-                v for v in product.verdicts if v.kind == VerdictKind.MISSING
-            ]
-            log(
-                f"{product.label_path}: {product.state} "
-                f"({len(missing)} part(s) to fetch)"
-            )
-        if patterns is not None:
-            log(
-                f"selection: {len(shown)} of {len(report.products)} "
-                "declared product(s) match select"
-            )
-        missing_parts = sum(
-            1
-            for p in shown
-            for v in p.verdicts
-            if v.kind == VerdictKind.MISSING
-        )
-        nonconforming = sum(
-            1
-            for p in shown
-            for v in p.verdicts
-            if v.kind == VerdictKind.NONCONFORMING
-        )
-        log(
-            f"total: {len(shown)} product(s), "
-            f"{missing_parts} missing part(s), "
-            f"{nonconforming} nonconforming (manual "
-            "review, never auto-fetched)"
-        )
+        _report_dry_run(report, patterns, log)
         return None
 
     root.mkdir(parents=True, exist_ok=True)
@@ -637,39 +747,42 @@ def _verify_part(
     return _PartOutcome(part, "ok", None, st.st_size, digest, computed)
 
 
-def _verify_product(
+def _judge_parts(
     design: ProductDesign,
-    adapter: FamilyAdapter,
-    root: Path,
-    *,
-    log: Callable[[str], None],
+    directory: Path,
+    parts: dict,
     cache: SignatureCache,
-    workers: int = 1,
-) -> ProductVerification:
-    """Verify one product in place: judge every designed part, backfill
-    evidence for present-but-unrecorded ones, persist the manifest in
-    chunks as evidence arrives (the cache piggybacks on the same
-    flushes), and never fetch."""
-    directory = root / design.family / design.collection / design.label
-    if not directory.exists():
-        return ProductVerification(design.directory_name, None, 0, 0, 0, ())
-    manifest = read_manifest(directory)
-    design = adapter.expand_design(design, directory)
-    parts = manifest["parts"]
+    workers: int,
+) -> list[_PartOutcome]:
+    """Judge every designed part of one product.
+
+    A hashing failure aborts before any manifest mutation: outcomes are
+    collected whole first, so a failed product leaves no partial state
+    (the cache holds nothing of it either — workers only peek).
+    """
 
     def judge(part: PartDesign) -> _PartOutcome:
         return _verify_part(part, directory, parts.get(part.name), cache)
 
     if workers <= 1:
-        outcomes = [judge(part) for part in design.parts]
-    else:
-        # a hashing failure aborts before any manifest mutation: outcomes
-        # are collected whole first, so a failed product leaves no
-        # partial state (the cache holds nothing of it either — workers
-        # only peek)
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            outcomes = list(pool.map(judge, design.parts))
+        return [judge(part) for part in design.parts]
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        return list(pool.map(judge, design.parts))
 
+
+def _apply_verify_outcomes(
+    outcomes: list[_PartOutcome],
+    parts: dict,
+    directory: Path,
+    manifest: dict,
+    cache: SignatureCache,
+) -> tuple[int, int, int, list[tuple[str, str]]]:
+    """Fold judged outcomes into counts and manifest backfills.
+
+    Returns (recorded_ok, missing, backfilled, nonconforming). The
+    manifest is persisted in chunks as backfill evidence arrives — the
+    cache piggybacks on the same flushes.
+    """
     recorded_ok = missing = backfilled = 0
     nonconforming: list[tuple[str, str]] = []
     arrivals = 0
@@ -701,6 +814,32 @@ def _verify_product(
                 cache.save_if_dirty()
         else:
             nonconforming.append((outcome.part.name, outcome.reason or ""))
+    return recorded_ok, missing, backfilled, nonconforming
+
+
+def _verify_product(
+    design: ProductDesign,
+    adapter: FamilyAdapter,
+    root: Path,
+    *,
+    log: Callable[[str], None],
+    cache: SignatureCache,
+    workers: int = 1,
+) -> ProductVerification:
+    """Verify one product in place: judge every designed part, backfill
+    evidence for present-but-unrecorded ones, persist the manifest in
+    chunks as evidence arrives (the cache piggybacks on the same
+    flushes), and never fetch."""
+    directory = root / design.family / design.collection / design.label
+    if not directory.exists():
+        return ProductVerification(design.directory_name, None, 0, 0, 0, ())
+    manifest = read_manifest(directory)
+    design = adapter.expand_design(design, directory)
+    parts = manifest["parts"]
+    outcomes = _judge_parts(design, directory, parts, cache, workers)
+    recorded_ok, missing, backfilled, nonconforming = _apply_verify_outcomes(
+        outcomes, parts, directory, manifest, cache
+    )
     if backfilled:
         write_manifest(directory, manifest)
     cache.save_if_dirty()
@@ -793,6 +932,78 @@ def verify_database(
     return VerifyReport(root=root, products=tuple(verifications))
 
 
+def _recognize_bosz_local(path: Path) -> bool:
+    """A local BOSZ source file: a spectrum or a wavelength-grid sidecar."""
+    return recognize_bosz(path) or recognize_wave_grid(path)
+
+
+def _recognize_tlusty_local(path: Path) -> bool:
+    """A local TLUSTY source file: a spectrum or a vispec tar."""
+    return recognize_tlusty(path) or path.name.endswith(".tar")
+
+
+def _recognize_miles_local(path: Path) -> bool:
+    """A local MILES source file: a spectrum FITS or the parameter table."""
+    return recognize_miles(path) or miles_params_name.match(path.name) is not None
+
+
+_STELIB_TREE_TOP = (TABLE_NAME, "ReadMe", "stelib.ps.gz")
+
+
+def _recognize_stelib_local(path: Path) -> bool:
+    """A local STELIB source file: a spectrum FITS or a catalog-tree top
+    file."""
+    return recognize_stelib_fits(path) or path.name in _STELIB_TREE_TOP
+
+
+_BASEL_ARCHIVE_KEY = {info["archive"]: key for key, info in BASEL_FILES.items()}
+
+
+def _recognize_basel_local(path: Path) -> bool:
+    """A local BaSeL source file: one of the published archives or the
+    ReadMe."""
+    return path.name in _BASEL_ARCHIVE_KEY
+
+
+_LOCAL_RECOGNIZERS: dict[str, Callable[[Path], bool]] = {
+    "bosz": _recognize_bosz_local,
+    "tlusty": _recognize_tlusty_local,
+    "miles": _recognize_miles_local,
+    "stelib": _recognize_stelib_local,
+    "basel": _recognize_basel_local,
+}
+
+
+def _local_placement(
+    family: str,
+    path_list: list[Path],
+) -> tuple[str, str]:
+    """(collection, release) for a locally registered product — where
+    the family's files land inside the database tree."""
+    if family == "bosz":
+        return _bosz_collection(path_list), "2024"
+    if family == "tlusty":
+        release = _tlusty_release(path_list)
+        return release, release
+    if family in ("miles", "stelib"):
+        return "library", _release_of(family, "library")
+    if family == "basel":
+        keys = {
+            _BASEL_ARCHIVE_KEY[p.name]
+            for p in path_list
+            if p.name in _BASEL_ARCHIVE_KEY
+        }
+        if len(keys) != 1:
+            raise ValueError(
+                "one basel product holds one published file (a version "
+                f"tarball or the ReadMe); found {sorted(keys)}"
+            )
+        key = keys.pop()
+        collection = key if key != "readme" else "format"
+        return collection, collection
+    raise ValueError(f"unknown family {family!r}")
+
+
 def register_local_product(
     database: str | Path,
     family: str,
@@ -818,49 +1029,10 @@ def register_local_product(
     if not path_list:
         raise ValueError("files must not be empty")
 
-    if family == "bosz":
-        def recognized(p: Path) -> bool:
-            return recognize_bosz(p) or recognize_wave_grid(p)
-        collection = _bosz_collection(path_list)
-        release = "2024"
-    elif family == "tlusty":
-        def recognized(p: Path) -> bool:
-            return recognize_tlusty(p) or p.name.endswith(".tar")
-        collection = _tlusty_release(path_list)
-        release = collection
-    elif family == "miles":
-        def recognized(p: Path) -> bool:
-            return (
-                recognize_miles(p)
-                or miles_params_name.match(p.name) is not None
-            )
-        collection = "library"
-        release = "2011"
-    elif family == "stelib":
-        _tree_top = (TABLE_NAME, "ReadMe", "stelib.ps.gz")
-
-        def recognized(p: Path) -> bool:
-            return recognize_stelib_fits(p) or p.name in _tree_top
-
-        collection = "library"
-        release = "2003"
-    elif family == "basel":
-        _basel_key = {info["archive"]: key for key, info in BASEL_FILES.items()}
-
-        def recognized(p: Path) -> bool:
-            return p.name in _basel_key
-
-        keys = {_basel_key[p.name] for p in path_list if p.name in _basel_key}
-        if len(keys) != 1:
-            raise ValueError(
-                "one basel product holds one published file (a version "
-                f"tarball or the ReadMe); found {sorted(keys)}"
-            )
-        key = keys.pop()
-        collection = key if key != "readme" else "format"
-        release = collection
-    else:
+    recognized = _LOCAL_RECOGNIZERS.get(family)
+    if recognized is None:
         raise ValueError(f"unknown family {family!r}")
+    collection, release = _local_placement(family, path_list)
 
     for p in path_list:
         if not p.is_file():

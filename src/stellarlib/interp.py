@@ -95,6 +95,94 @@ def _bracket(axis: np.ndarray, x: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return i, w
 
 
+def _validated_axes(
+    axes: Mapping[str, Sequence[float]],
+    queries: Mapping[str, float | Sequence[float]],
+) -> tuple[tuple[str, ...], dict[str, np.ndarray]]:
+    """Axis names (declaration order) with their validated float64
+    arrays: non-empty, 1-D, strictly increasing unless degenerate."""
+    names = tuple(axes)
+    if set(names) != set(queries):
+        raise ValueError(
+            f"queries must name exactly the axes {names}; got "
+            f"{sorted(queries)}"
+        )
+    arrays = {}
+    for name in names:
+        axis = np.asarray(axes[name], dtype=np.float64)
+        if axis.ndim != 1 or axis.size < 1:
+            raise ValueError(f"axis {name!r} must be a non-empty 1-D array")
+        if axis.size > 1 and not np.all(np.diff(axis) > 0):
+            raise ValueError(
+                f"axis {name!r} must be strictly increasing"
+            )
+        arrays[name] = axis
+    return names, arrays
+
+
+def _query_arrays_of(
+    names: tuple[str, ...],
+    queries: Mapping[str, float | Sequence[float]],
+) -> dict[str, np.ndarray]:
+    """Queries as 1-D float64 arrays, all sharing one length."""
+    qs = {
+        name: np.atleast_1d(np.asarray(queries[name], dtype=np.float64))
+        for name in names
+    }
+    n = None
+    for name, q in qs.items():
+        if q.ndim != 1:
+            raise ValueError(f"query for axis {name!r} must be scalar or 1-D")
+        if n is None:
+            n = q.size
+        elif q.size != n:
+            raise ValueError("query arrays must share one length")
+    return qs
+
+
+def _fill_corners(
+    names: tuple[str, ...],
+    arrays: dict[str, np.ndarray],
+    qs: dict[str, np.ndarray],
+) -> tuple[np.ndarray, np.ndarray]:
+    """The ``(n, 2^N)`` flat corner indices and multilinear weights, one
+    row per query point.
+
+    Flat indices address the C-order ravel of the axis product (for
+    (teff, log g, [M/H]) this reproduces the downstream
+    ``c = 4*dt + 2*dg + d*m`` contract exactly); the C-order corner
+    enumeration makes the first axis most significant.
+    """
+    n = qs[names[0]].size
+    sizes = [arrays[name].size for name in names]
+    n_corners = 2 ** len(names)
+    idx = np.empty((n, n_corners), dtype=np.int64)
+    w = np.empty((n, n_corners), dtype=np.float64)
+    # strides of the C-order ravel over the axis product
+    strides = np.concatenate(
+        [np.cumprod(sizes[::-1])[::-1][1:], [1]]
+    )
+    fractions = {}
+    cell_index = {}
+    cell_step = {}
+    for name in names:
+        i, fw = _bracket(arrays[name], qs[name])
+        cell_index[name] = i
+        fractions[name] = fw
+        # a degenerate axis pins both corner digits on its single value
+        cell_step[name] = 1 if arrays[name].size > 1 else 0
+    for corner, digits in enumerate(np.ndindex(*(2,) * len(names))):
+        w_col = np.ones(n)
+        flat = np.zeros(n, dtype=np.int64)
+        for pos, name in enumerate(names):
+            digit = digits[pos]
+            w_col *= digit * fractions[name] + (1 - digit) * (1 - fractions[name])
+            flat += (cell_index[name] + digit * cell_step[name]) * strides[pos]
+        idx[:, corner] = flat
+        w[:, corner] = w_col
+    return idx, w
+
+
 def corner_weights(
     axes: Mapping[str, Sequence[float]], **queries: float | Sequence[float]
 ) -> tuple[np.ndarray, np.ndarray, tuple[np.ndarray, ...]]:
@@ -124,72 +212,14 @@ def corner_weights(
         range; this function clamps such queries to the edge cell and
         reports — the policy decision belongs to the caller.
     """
-    names = tuple(axes)
-    if set(names) != set(queries):
-        raise ValueError(
-            f"queries must name exactly the axes {names}; got "
-            f"{sorted(queries)}"
-        )
-    arrays = {}
-    for name in names:
-        axis = np.asarray(axes[name], dtype=np.float64)
-        if axis.ndim != 1 or axis.size < 1:
-            raise ValueError(f"axis {name!r} must be a non-empty 1-D array")
-        if axis.size > 1 and not np.all(np.diff(axis) > 0):
-            raise ValueError(
-                f"axis {name!r} must be strictly increasing"
-            )
-        arrays[name] = axis
-
-    query_arrays = {
-        name: np.atleast_1d(np.asarray(queries[name], dtype=np.float64))
+    names, arrays = _validated_axes(axes, queries)
+    qs = _query_arrays_of(names, queries)
+    idx, w = _fill_corners(names, arrays, qs)
+    clamped = tuple(
+        (qs[name] < arrays[name][0]) | (qs[name] > arrays[name][-1])
         for name in names
-    }
-    n = None
-    for name, q in query_arrays.items():
-        if q.ndim != 1:
-            raise ValueError(f"query for axis {name!r} must be scalar or 1-D")
-        if n is None:
-            n = q.size
-        elif q.size != n:
-            raise ValueError("query arrays must share one length")
-
-    sizes = [arrays[name].size for name in names]
-    n_corners = 2 ** len(names)
-
-    clamped = []
-    for name in names:
-        axis = arrays[name]
-        q = query_arrays[name]
-        clamped.append((q < axis[0]) | (q > axis[-1]))
-
-    idx = np.empty((n, n_corners), dtype=np.int64)
-    w = np.empty((n, n_corners), dtype=np.float64)
-    # strides of the C-order ravel over the axis product
-    strides = np.concatenate(
-        [np.cumprod(sizes[::-1])[::-1][1:], [1]]
     )
-    corner = 0
-    fractions = {}
-    cell_index = {}
-    cell_step = {}
-    for name in names:
-        i, fw = _bracket(arrays[name], query_arrays[name])
-        cell_index[name] = i
-        fractions[name] = fw
-        # a degenerate axis pins both corner digits on its single value
-        cell_step[name] = 1 if arrays[name].size > 1 else 0
-    for corner, digits in enumerate(np.ndindex(*(2,) * len(names))):
-        # C-order corner enumeration: first axis is most significant
-        w_col = np.ones(n)
-        flat = np.zeros(n, dtype=np.int64)
-        for pos, name in enumerate(names):
-            digit = digits[pos]
-            w_col *= digit * fractions[name] + (1 - digit) * (1 - fractions[name])
-            flat += (cell_index[name] + digit * cell_step[name]) * strides[pos]
-        idx[:, corner] = flat
-        w[:, corner] = w_col
-    return idx, w, tuple(clamped)
+    return idx, w, clamped
 
 
 # -- Voronoi (nearest-node) machinery -----------------------------------------

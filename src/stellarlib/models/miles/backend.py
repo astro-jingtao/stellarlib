@@ -106,6 +106,85 @@ def _collect_files(
     return files
 
 
+def _locate_table(
+    files: list[Path],
+    tars: list[Path],
+    params_path: str | Path | None,
+) -> Path:
+    """The MILES parameter table: pinned, discovered among the sources,
+    or next to a lone tarball. Refused when absent — the table is part
+    of the product; without it the set cannot state its stars'
+    coordinates."""
+    table = (
+        Path(params_path)
+        if params_path is not None
+        else params_table_among(files)
+    )
+    if table is None and tars:
+        table = params_table_among(
+            sorted(p for p in tars[0].parent.iterdir() if p.is_file())
+        )
+    if table is None:
+        raise ValueError(
+            "no MILES parameter table (paramsMILES*.txt) among the "
+            "sources, next to the tarball, or given as params_path=; the "
+            "table is part of the product — without it the set cannot "
+            "state its stars' coordinates"
+        )
+    return table
+
+
+def _resolve_members(
+    files: list[Path],
+    tars: list[Path],
+) -> tuple[dict[int, Path | str], Path | None]:
+    """The library's s-numbered spectra: from one tarball (by member
+    name) or from loose files — one set is built from either, never
+    both."""
+    tar_path = tars[0] if tars else None
+    if tar_path is not None:
+        loose = [f for f in files if recognize_miles(f)]
+        if loose:
+            raise ValueError(
+                f"the sources hold the tarball {tar_path.name} AND loose "
+                f"FITS files ({[f.name for f in loose[:3]]}"
+                f"{'...' if len(loose) > 3 else ''}) — one set is built "
+                "from either the tarball or the files, never both; split "
+                "the sources"
+            )
+        return _tar_members(tar_path), tar_path
+    members: dict[int, Path | str] = {}
+    for f in files:
+        if not recognize_miles(f):
+            continue
+        s = int(MILES_FITS_RE.match(f.name).group(1))
+        if s in members:
+            raise MetadataConflictError(
+                f"the sources state s{s:04d} twice "
+                f"({members[s]}, {f.name})"
+            )
+        members[s] = f
+    return members, None
+
+
+def _split_parameterized(
+    members: dict[int, Path | str],
+    rows: dict[int, dict],
+) -> tuple[list[tuple[int, dict]], list[dict]]:
+    """Split the held stars into (s-number, row) pairs with full
+    coordinates, and records for those the table leaves
+    unparameterized."""
+    parameterized: list[tuple[int, dict]] = []
+    without_parameters: list[dict] = []
+    for s in sorted(members):
+        row = rows[s]
+        if None in (row["teff"], row["log_surface_gravity"], row["m_h"]):
+            without_parameters.append({"s_number": s, "name": row["name"]})
+        else:
+            parameterized.append((s, row))
+    return parameterized, without_parameters
+
+
 def read_miles(
     sources: str | os.PathLike | Iterable[str | os.PathLike],
     params_path: str | Path | None = None,
@@ -123,49 +202,9 @@ def read_miles(
             "one set holds one library tarball; found "
             f"{[f.name for f in tars]} — split the sources per product"
         )
-    table = (
-        Path(params_path)
-        if params_path is not None
-        else params_table_among(files)
-    )
-    if table is None and tars:
-        table = params_table_among(
-            sorted(p for p in tars[0].parent.iterdir() if p.is_file())
-        )
-    if table is None:
-        raise ValueError(
-            "no MILES parameter table (paramsMILES*.txt) among the "
-            "sources, next to the tarball, or given as params_path=; the "
-            "table is part of the product — without it the set cannot "
-            "state its stars' coordinates"
-        )
+    table = _locate_table(files, tars, params_path)
     rows = read_params_table(table)
-
-    members: dict[int, Path | str]
-    tar_path = tars[0] if tars else None
-    if tar_path is not None:
-        loose = [f for f in files if recognize_miles(f)]
-        if loose:
-            raise ValueError(
-                f"the sources hold the tarball {tar_path.name} AND loose "
-                f"FITS files ({[f.name for f in loose[:3]]}"
-                f"{'...' if len(loose) > 3 else ''}) — one set is built "
-                "from either the tarball or the files, never both; split "
-                "the sources"
-            )
-        members = _tar_members(tar_path)
-    else:
-        members = {}
-        for f in files:
-            if not recognize_miles(f):
-                continue
-            s = int(MILES_FITS_RE.match(f.name).group(1))
-            if s in members:
-                raise MetadataConflictError(
-                    f"the sources state s{s:04d} twice "
-                    f"({members[s]}, {f.name})"
-                )
-            members[s] = f
+    members, tar_path = _resolve_members(files, tars)
     if not members:
         raise UnrecognizedFormatError(
             f"no MILES spectra (s????.fits) found among {files[0].parent}"
@@ -177,15 +216,7 @@ def read_miles(
             f"table row (first s{missing_rows[0]:04d}); the package is "
             "inconsistent — re-fetch the table with the spectra"
         )
-
-    parameterized: list[tuple[int, dict]] = []
-    without_parameters: list[dict] = []
-    for s in sorted(members):
-        row = rows[s]
-        if None in (row["teff"], row["log_surface_gravity"], row["m_h"]):
-            without_parameters.append({"s_number": s, "name": row["name"]})
-        else:
-            parameterized.append((s, row))
+    parameterized, without_parameters = _split_parameterized(members, rows)
 
     identity = miles_identity()
     parameters = resolve_parameters(

@@ -100,6 +100,73 @@ def _collect_files(
     return files
 
 
+def _index_cor_names(rows: list[dict]) -> dict[str, dict]:
+    """Index the star table by corrected-spectrum file name — one file
+    names one star, a contradiction is an error."""
+    by_cor_name: dict[str, dict] = {}
+    for row in rows:
+        for name in row["cor_files"]:
+            if name in by_cor_name:
+                raise MetadataConflictError(
+                    f"the star table states {name} for both "
+                    f"{by_cor_name[name]['star']!r} and {row['star']!r}"
+                )
+            by_cor_name[name] = row
+    return by_cor_name
+
+
+def _split_corrected_observed(
+    files: list[Path],
+) -> tuple[dict[str, Path], list[Path]]:
+    """Split the held STELIB FITS files into corrected spectra (the
+    published library) and their observed counterparts."""
+    members: dict[str, Path] = {}
+    observed: list[Path] = []
+    for path in files:
+        if not recognize_stelib_fits(path):
+            continue
+        if is_corrected_spectrum(path):
+            if path.name in members:
+                raise MetadataConflictError(
+                    f"the sources state {path.name} twice ({members[path.name]}, {path})"
+                )
+            members[path.name] = path
+        else:
+            observed.append(path)
+    return members, observed
+
+
+def _split_rows_by_parameters(
+    rows: list[dict],
+    members: dict[str, Path],
+) -> tuple[list[tuple[Path, dict]], list[dict], list[dict]]:
+    """Split the table's rows by what they can serve: (path, row) pairs
+    with full coordinates, records for held-but-unparameterized stars,
+    and the extra spectra of doubly-observed stars.
+
+    A star with two corrected spectra (HD 053929: the two observing
+    runs) is one scatter point: the table's own cSpFile1-before-
+    cSpFile2 order picks the served file; the extra file stays held
+    data, recorded — two nodes at one coordinate would not be a
+    scatter anymore.
+    """
+    parameterized: list[tuple[Path, dict]] = []
+    without_parameters: list[dict] = []
+    second_spectra: list[dict] = []
+    for row in rows:
+        held = [name for name in row["cor_files"] if name in members]
+        if not held:
+            continue
+        second_spectra.extend(
+            {"star": row["star"], "spectrum_file": name} for name in held[1:]
+        )
+        if None in (row["teff"], row["log_surface_gravity"], row["m_h"]):
+            without_parameters.append({"star": row["star"], "spectrum_file": held[0]})
+        else:
+            parameterized.append((members[held[0]], row))
+    return parameterized, without_parameters, second_spectra
+
+
 def read_stelib(
     sources: str | os.PathLike | Iterable[str | os.PathLike],
     table_path: str | Path | None = None,
@@ -119,30 +186,8 @@ def read_stelib(
             "it the set cannot state its stars' coordinates"
         )
     rows = read_star_table(table)
-
-    by_cor_name: dict[str, dict] = {}
-    for row in rows:
-        for name in row["cor_files"]:
-            if name in by_cor_name:
-                raise MetadataConflictError(
-                    f"the star table states {name} for both "
-                    f"{by_cor_name[name]['star']!r} and {row['star']!r}"
-                )
-            by_cor_name[name] = row
-
-    members: dict[str, Path] = {}
-    observed: list[Path] = []
-    for path in files:
-        if not recognize_stelib_fits(path):
-            continue
-        if is_corrected_spectrum(path):
-            if path.name in members:
-                raise MetadataConflictError(
-                    f"the sources state {path.name} twice ({members[path.name]}, {path})"
-                )
-            members[path.name] = path
-        else:
-            observed.append(path)
+    by_cor_name = _index_cor_names(rows)
+    members, observed = _split_corrected_observed(files)
     if not members:
         raise UnrecognizedFormatError(
             f"no STELIB corrected spectra (*_V<version>.fits) found among "
@@ -155,26 +200,9 @@ def read_stelib(
             f"star-table row (first {missing_rows[0]}); the package is "
             "inconsistent — re-fetch the table with the spectra"
         )
-
-    parameterized: list[tuple[Path, dict]] = []
-    without_parameters: list[dict] = []
-    second_spectra: list[dict] = []
-    for row in rows:
-        held = [name for name in row["cor_files"] if name in members]
-        if not held:
-            continue
-        # a star with two corrected spectra (HD 053929: the two observing
-        # runs) is one scatter point: the table's own cSpFile1-before-
-        # cSpFile2 order picks the served file; the extra file stays
-        # held data, recorded — two nodes at one coordinate would not be
-        # a scatter anymore
-        second_spectra.extend(
-            {"star": row["star"], "spectrum_file": name} for name in held[1:]
-        )
-        if None in (row["teff"], row["log_surface_gravity"], row["m_h"]):
-            without_parameters.append({"star": row["star"], "spectrum_file": held[0]})
-        else:
-            parameterized.append((members[held[0]], row))
+    parameterized, without_parameters, second_spectra = (
+        _split_rows_by_parameters(rows, members)
+    )
     rows_without_corrected = [
         {"star": row["star"], "observed_only": row["obs_files"]}
         for row in rows

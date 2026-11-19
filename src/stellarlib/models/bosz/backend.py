@@ -132,6 +132,47 @@ def _discover_wave_path(
     return matching[0]
 
 
+def _select_composition(
+    parsed: list[dict],
+    am: float,
+    cm: float,
+    vmicro: int | None,
+    base: str,
+) -> tuple[list[dict], object]:
+    """Select one ([a/M], [C/M], vmicro) slice of a mirror directory's
+    parsed files — a mirror interleaves every composition and vmicro
+    variant, so reading one is a selection, not an error.
+
+    ``vmicro=None`` applies the atmosphere-family policy (mp 1, ms/ap
+    2 km/s per node); an int pins every node to it (a node whose file
+    is absent is a hole, reported by the grid). Returns the kept files
+    and the policy as recorded in the set notes.
+    """
+    selected = [f for f in parsed if f["am"] == am and f["cm"] == cm]
+    if not selected:
+        available_am = sorted({f["am"] for f in parsed})
+        available_cm = sorted({f["cm"] for f in parsed})
+        raise ValueError(
+            f"no spectra at [a/M] = {am:+.2f}, [C/M] = {cm:+.2f} among the "
+            f"{len(parsed)} files of {base}; available [a/M] {available_am}, "
+            f"[C/M] {available_cm} — pass am=/cm= to choose a composition"
+        )
+    if vmicro is None:
+        kept = [
+            f for f in selected
+            if f["vmicro"] == family_for(int(f["teff"]), float(f["logg"]))[1]
+        ]
+    else:
+        kept = [f for f in selected if f["vmicro"] == int(vmicro)]
+    if not kept:
+        raise ValueError(
+            f"no spectra at [a/M] = {am:+.2f}, [C/M] = {cm:+.2f} with the "
+            f"requested vmicro selection among the {len(parsed)} files of "
+            f"{base}"
+        )
+    return kept, ("family" if vmicro is None else int(vmicro))
+
+
 def read_bosz(
     sources: str | os.PathLike | Iterable[str | os.PathLike],
     wave_path: str | os.PathLike | None = None,
@@ -168,29 +209,9 @@ def read_bosz(
     total = len(parsed)
     am = round(float(am), 2)
     cm = round(float(cm), 2)
-    selected = [f for f in parsed if f["am"] == am and f["cm"] == cm]
-    if not selected:
-        available_am = sorted({f["am"] for f in parsed})
-        available_cm = sorted({f["cm"] for f in parsed})
-        raise ValueError(
-            f"no spectra at [a/M] = {am:+.2f}, [C/M] = {cm:+.2f} among the "
-            f"{total} files of {base}; available [a/M] {available_am}, "
-            f"[C/M] {available_cm} — pass am=/cm= to choose a composition"
-        )
-    if vmicro is None:
-        kept = [
-            f for f in selected
-            if f["vmicro"] == family_for(int(f["teff"]), float(f["logg"]))[1]
-        ]
-    else:
-        kept = [f for f in selected if f["vmicro"] == int(vmicro)]
-    if not kept:
-        raise ValueError(
-            f"no spectra at [a/M] = {am:+.2f}, [C/M] = {cm:+.2f} with the "
-            f"requested vmicro selection among the {total} files of {base}"
-        )
-    all_facts = kept
-    vmicro_policy = "family" if vmicro is None else int(vmicro)
+    all_facts, vmicro_policy = _select_composition(
+        parsed, am, cm, vmicro, base
+    )
 
     def _single(key: str) -> object:
         values = sorted({facts[key] for facts in all_facts})

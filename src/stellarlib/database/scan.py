@@ -214,6 +214,103 @@ def enumerate_designs(
     return designs
 
 
+def _present_design(
+    relative: str,
+    manifest: dict,
+    directory: Path,
+    designs: dict[str, tuple[ProductDesign, FamilyAdapter]],
+) -> tuple[ProductDesign, FamilyAdapter]:
+    """The design + adapter for a present product directory: the
+    blueprint's (expanded in place into ``designs``) or, for a
+    registered product, the one derived from its own manifest."""
+    if relative in designs:
+        design, adapter = designs[relative]
+        design = adapter.expand_design(design, directory)
+        designs[relative] = (design, adapter)
+        return design, adapter
+    adapter = _adapter_for(manifest["family"])
+    design = adapter.design_of_manifest(manifest, directory)
+    if design is None or design.directory_name != relative:
+        # registered products: the design is the product's own
+        # recorded part list
+        design = ProductDesign(
+            family=manifest["family"],
+            collection=relative.split("/")[1],
+            label=manifest["label"],
+            kind="local_user_files",
+            parts=tuple(
+                PartDesign(name=name, url=None)
+                for name in (manifest.get("parts") or {})
+            ),
+        )
+    return design, adapter
+
+
+def _product_report_of(
+    directory: Path,
+    relative: str,
+    designs: dict[str, tuple[ProductDesign, FamilyAdapter]],
+    cache: SignatureCache,
+) -> ProductReport | None:
+    """One present product directory's report: design and every part
+    judged. None when the directory holds no readable MANIFEST (not a
+    product directory)."""
+    try:
+        manifest = read_manifest(directory)
+    except Exception:
+        return None
+    design, adapter = _present_design(relative, manifest, directory, designs)
+    verdicts = tuple(
+        adapter.classify_part(design, part, directory, manifest, cache)
+        for part in design.parts
+    )
+    state = (
+        "complete"
+        if verdicts and all(v.kind == VerdictKind.OK for v in verdicts)
+        else "incomplete"
+    )
+    return ProductReport(
+        design=design, state=state, verdicts=verdicts, directory=directory
+    )
+
+
+def _absent_products(
+    designs: dict[str, tuple[ProductDesign, FamilyAdapter]],
+    registered: set[str],
+) -> list[ProductReport]:
+    """Reports for blueprint products never fetched (no directory,
+    every designed part missing)."""
+    return [
+        ProductReport(
+            design=design,
+            state="incomplete",
+            verdicts=tuple(
+                PartVerdict(part=part.name, kind=VerdictKind.MISSING)
+                for part in design.parts
+            ),
+            directory=None,
+        )
+        for name, (design, _adapter) in designs.items()
+        if name not in registered
+    ]
+
+
+def _unregistered_dirs(
+    root: Path,
+    product_dirs: list[Path],
+    registered: set[str],
+    designs: dict[str, tuple[ProductDesign, FamilyAdapter]],
+) -> list[str]:
+    """Present directories that are neither blueprint products nor
+    registered products."""
+    unregistered = []
+    for directory in product_dirs:
+        relative = str(directory.relative_to(root)).replace("\\", "/")
+        if relative not in registered and relative not in designs:
+            unregistered.append(relative)
+    return unregistered
+
+
 def scan_database(
     database: str | Path,
     declarations: list[dict] | None = None,
@@ -246,67 +343,17 @@ def scan_database(
     )
     for directory in product_dirs:
         relative = str(directory.relative_to(root)).replace("\\", "/")
-        try:
-            manifest = read_manifest(directory)
-        except Exception:
+        report = _product_report_of(
+            directory, relative, designs, signature_cache
+        )
+        if report is None:
             continue  # not a product directory; reported below if unmapped
-        if relative in designs:
-            design, adapter = designs[relative]
-            design = adapter.expand_design(design, directory)
-            designs[relative] = (design, adapter)
-        else:
-            adapter = _adapter_for(manifest["family"])
-            design = adapter.design_of_manifest(manifest, directory)
-            if design is None or design.directory_name != relative:
-                # registered products: the design is the product's own
-                # recorded part list
-                design = ProductDesign(
-                    family=manifest["family"],
-                    collection=relative.split("/")[1],
-                    label=manifest["label"],
-                    kind="local_user_files",
-                    parts=tuple(
-                        PartDesign(name=name, url=None)
-                        for name in (manifest.get("parts") or {})
-                    ),
-                )
-        verdicts = tuple(
-            adapter.classify_part(design, part, directory, manifest, signature_cache)
-            for part in design.parts
-        )
-        state = (
-            "complete"
-            if verdicts and all(v.kind == VerdictKind.OK for v in verdicts)
-            else "incomplete"
-        )
-        reports.append(
-            ProductReport(
-                design=design,
-                state=state,
-                verdicts=verdicts,
-                directory=directory,
-            )
-        )
+        reports.append(report)
         registered.add(relative)
 
-    for name, (design, _adapter) in designs.items():
-        if name in registered:
-            continue
-        verdicts = tuple(
-            PartVerdict(part=part.name, kind=VerdictKind.MISSING)
-            for part in design.parts
-        )
-        reports.append(
-            ProductReport(
-                design=design, state="incomplete", verdicts=verdicts, directory=None
-            )
-        )
+    reports.extend(_absent_products(designs, registered))
 
-    unregistered = []
-    for directory in product_dirs:
-        relative = str(directory.relative_to(root)).replace("\\", "/")
-        if relative not in registered and relative not in designs:
-            unregistered.append(relative)
+    unregistered = _unregistered_dirs(root, product_dirs, registered, designs)
 
     if own_cache:
         signature_cache.save_if_dirty()
