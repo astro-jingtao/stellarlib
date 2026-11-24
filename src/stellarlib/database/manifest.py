@@ -10,6 +10,7 @@ reference-registered local products record absolute paths and say so.
 from __future__ import annotations
 
 from collections.abc import Mapping
+import dataclasses
 import json
 from pathlib import Path
 
@@ -17,7 +18,7 @@ from stellarlib.exceptions import DataIntegrityError
 
 __all__ = [
     "MANIFEST_SCHEMA",
-    "empty_manifest",
+    "ManifestHeader",
     "manifest_path",
     "read_manifest",
     "write_manifest",
@@ -51,34 +52,42 @@ def write_manifest(directory: Path, manifest: Mapping) -> None:
     tmp.replace(path)
 
 
-def empty_manifest(
-    *,
-    family: str,
-    release: str,
-    label: str,
-    kind: str,
-    source_class: str,
-    note: str,
-    format: str,
-    references: list[str],
-    family_section: Mapping | None = None,
-    by_reference: bool = False,
-) -> dict:
-    """A fresh manifest skeleton with no parts recorded yet."""
-    return {
-        "schema": MANIFEST_SCHEMA,
-        "family": family,
-        "release": release,
-        "label": label,
-        "kind": kind,
-        "source_class": source_class,
-        "note": note,
-        "format": format,
-        "references": list(references),
-        "parts": {},
-        "family_section": dict(family_section or {}),
-        "by_reference": by_reference,
-    }
+@dataclasses.dataclass(frozen=True)
+class ManifestHeader:
+    """The identity half of a product manifest: everything but parts.
+
+    One attribute per top-level manifest key (the schema itself lives
+    here as fields); ``to_manifest`` stamps the schema version and
+    appends the empty parts table.
+    """
+
+    family: str
+    release: str
+    label: str
+    kind: str
+    source_class: str
+    note: str
+    format: str
+    references: tuple[str, ...] = ()
+    family_section: Mapping | None = None
+    by_reference: bool = False
+
+    def to_manifest(self) -> dict:
+        """A fresh manifest skeleton with no parts recorded yet."""
+        return {
+            "schema": MANIFEST_SCHEMA,
+            "family": self.family,
+            "release": self.release,
+            "label": self.label,
+            "kind": self.kind,
+            "source_class": self.source_class,
+            "note": self.note,
+            "format": self.format,
+            "references": list(self.references),
+            "parts": {},
+            "family_section": dict(self.family_section or {}),
+            "by_reference": self.by_reference,
+        }
 
 
 def _validate(manifest: Mapping, path: Path) -> None:

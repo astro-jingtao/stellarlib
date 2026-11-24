@@ -5,7 +5,9 @@
 # matrix, not a sample. The lint gate pins the ruff version so a ruff
 # release cannot change the gate. The network suite is an explicit opt-in
 # job: upstream availability flakes must never gate merges, so it reports
-# but cannot fail.
+# but cannot fail. The lint gate is strict: the codebase holds zero open
+# ruff findings (the former parameter-list waivers became BoszComposition
+# and ManifestHeader).
 
 name: CI
 
@@ -23,11 +25,6 @@ jobs:
     name: ruff
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    # informational until the two parked public-signature designs are
-    # decided (TODO.md: empty_manifest, BoszSpectra.construct — 3 PLR
-    # findings stand open by decision); flip to a strict gate by removing
-    # continue-on-error once they land.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

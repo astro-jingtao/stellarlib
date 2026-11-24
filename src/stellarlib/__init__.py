@@ -31,6 +31,7 @@ from stellarlib.database.transfer.merge import (
 from stellarlib.exceptions import StellarLibError
 from stellarlib.facade import (
     BaselSpectra,
+    BoszComposition,
     BoszSpectra,
     MilesSpectra,
     StelibSpectra,
@@ -67,6 +68,7 @@ from stellarlib.spectra.unified import TRANSFORMATIONS, UnifiedView
 __all__ = [
     "TRANSFORMATIONS",
     "BaselSpectra",
+    "BoszComposition",
     "BoszSpectra",
     "DataAsset",
     "Database",

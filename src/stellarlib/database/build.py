@@ -50,7 +50,7 @@ from stellarlib.database.design import (
 )
 from stellarlib.database.inventory import refresh_inventory
 from stellarlib.database.manifest import (
-    empty_manifest,
+    ManifestHeader,
     read_manifest,
     write_manifest,
 )
@@ -168,7 +168,7 @@ def _product_manifest(design: ProductDesign, directory: Path) -> dict:
     official-package record."""
     if (directory / "MANIFEST.json").exists():
         return read_manifest(directory)
-    return empty_manifest(
+    return ManifestHeader(
         family=design.family,
         release=_release_of(design.family, design.collection),
         label=design.label,
@@ -177,9 +177,9 @@ def _product_manifest(design: ProductDesign, directory: Path) -> dict:
         note="whole official package: fetched exactly as the source "
         "publishes it (a directory mirror or an archive file)",
         format=_format_of(design.family),
-        references=[r.citation for r in references(design.family)],
+        references=tuple(r.citation for r in references(design.family)),
         family_section={"mirror": dict(design.facts)},
-    )
+    ).to_manifest()
 
 
 def _expands_design(part: PartDesign, entry: dict) -> bool:
@@ -1064,7 +1064,7 @@ def register_local_product(
             "retrieved_at": _now_iso(),
             "url": None,
         }
-    manifest = empty_manifest(
+    manifest = ManifestHeader(
         family=family,
         release=release,
         label=label,
@@ -1072,10 +1072,10 @@ def register_local_product(
         source_class="local_user_file",
         note=note,
         format=_format_of(family),
-        references=[r.citation for r in references(family)],
+        references=tuple(r.citation for r in references(family)),
         family_section=_local_section(family, path_list),
         by_reference=not copy,
-    )
+    ).to_manifest()
     manifest["parts"] = parts
     write_manifest(target_dir, manifest)
     cache.save_if_dirty()

@@ -36,7 +36,7 @@ from stellarlib.database.design import (
     classify_part_generic,
 )
 from stellarlib.database.manifest import (
-    empty_manifest,
+    ManifestHeader,
     read_manifest,
     write_manifest,
 )
@@ -294,7 +294,7 @@ class TestBlueprintDesign:
 
 class TestManifest:
     def test_roundtrip_and_validation(self, tmp_path):
-        manifest = empty_manifest(
+        manifest = ManifestHeader(
             family="bosz",
             release="2024",
             label="x",
@@ -302,8 +302,8 @@ class TestManifest:
             source_class="official_archive",
             note="n",
             format="bosz_resam",
-            references=["ref"],
-        )
+            references=("ref",),
+        ).to_manifest()
         manifest["parts"]["f.txt"] = {"file": "f.txt", "sha256": "0" * 64}
         write_manifest(tmp_path, manifest)
         again = read_manifest(tmp_path)
@@ -324,7 +324,7 @@ class TestScan:
         return directory
 
     def _mirror_manifest(self, label: str) -> dict:
-        return empty_manifest(
+        return ManifestHeader(
             family="bosz",
             release="2024",
             label=label,
@@ -332,11 +332,11 @@ class TestScan:
             source_class="official_archive",
             note="",
             format="bosz_resam",
-            references=[],
+            references=(),
             family_section={
                 "mirror": {"broadening": "r500", "metallicity": 0.0}
             },
-        )
+        ).to_manifest()
 
     def test_two_state_verdicts(self, tmp_path):
         directory = self._product(tmp_path, "m+0.00")

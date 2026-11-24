@@ -169,7 +169,7 @@ A full-integrity pass re-checks every recorded part against both its recorded si
 stellarlib.verify_database("my-db", workers=8)
 ```
 
-Open one mirrored product as a grid. A BOSZ directory interleaves every composition and vmicro variant, so opening it is a selection (defaults: solar-scaled composition, the atmosphere-family vmicro):
+Open one mirrored product as a grid. A BOSZ directory interleaves every composition and vmicro variant, so opening it is a selection (defaults: solar-scaled composition, the atmosphere-family vmicro; pin a different slice with `composition=stellarlib.BoszComposition(am=..., cm=..., vmicro=...)` — `am` is [a/M] alpha enhancement, `cm` is [C/M], `vmicro` the microturbulent velocity in km/s):
 
 ```python
 grid = db.grid("bosz/2024", collection="r500", label="m+0.00")

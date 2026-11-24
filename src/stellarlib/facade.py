@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from abc import ABC
 from collections.abc import Iterable
+import dataclasses
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -30,6 +31,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "BaselSpectra",
+    "BoszComposition",
     "BoszSpectra",
     "MilesSpectra",
     "StelibSpectra",
@@ -52,6 +54,25 @@ class UnifiedSpectra(SpectrumGrid, ABC):
     model_name: str = ""
 
 
+@dataclasses.dataclass(frozen=True)
+class BoszComposition:
+    """One composition slice of a BOSZ mirror directory.
+
+    A mirror interleaves every composition and microturbulence variant
+    of every (Teff, log g, [M/H]) node, so reading one is a selection.
+    ``am`` is [a/M] — the alpha-element enhancement relative to the
+    total metallicity (the filename's ``a`` token); ``cm`` is [C/M] —
+    the carbon-to-metal ratio (the ``c`` token); both default 0,
+    solar-scaled. ``vmicro`` is the microturbulent velocity in km/s
+    (the ``v`` token), or ``None`` for the atmosphere-family policy
+    (mp 1, ms/ap 2 km/s per node).
+    """
+
+    am: float = 0.0
+    cm: float = 0.0
+    vmicro: int | None = None
+
+
 class BoszSpectra(UnifiedSpectra):
     """BOSZ 2024 resampled spectra under the unified interface."""
 
@@ -61,32 +82,36 @@ class BoszSpectra(UnifiedSpectra):
     def construct(
         cls,
         paths: str | Path | Iterable[str | Path] | None = None,
+        *,
         wave_path: str | Path | None = None,
         database: str | Path | Database | None = None,
         label: str | None = None,
         collection: str | None = None,
-        am: float = 0.0,
-        cm: float = 0.0,
-        vmicro: float | None = None,
+        composition: BoszComposition | None = None,
         release: str | None = None,
     ) -> BoszSpectra:
         """Load BOSZ spectra from local files/directories or a database.
 
         ``paths`` may be a directory (a mirror is read by selecting one
-        composition: ``am``/``cm`` default 0, ``vmicro`` the family
-        policy; the wavelength sidecar is discovered per the known
-        layouts, or pinned with ``wave_path``), files, or both.
-        ``database``/``label`` load a product from a database built with
-        ``stellarlib.build_database`` — a mirror product needs its
-        ``collection`` (e.g. ``"r500"``) when the metallicity label alone
-        is ambiguous. ``wave_path`` pins the wavelength sidecar on
-        either branch; left unset on the database branch, the sidecar is
-        discovered across the database's products (mirror products hold
-        no wave file of their own — the sidecars mirror as their own
-        product).
+        composition: ``composition`` defaults to solar-scaled with the
+        atmosphere-family vmicro; the wavelength sidecar is discovered
+        per the known layouts, or pinned with ``wave_path``), files, or
+        both. ``database``/``label`` load a product from a database
+        built with ``stellarlib.build_database`` — a mirror product
+        needs its ``collection`` (e.g. ``"r500"``) when the metallicity
+        label alone is ambiguous. ``wave_path`` pins the wavelength
+        sidecar on either branch; left unset on the database branch, the
+        sidecar is discovered across the database's products (mirror
+        products hold no wave file of their own — the sidecars mirror as
+        their own product).
         """
+        selected = composition if composition is not None else BoszComposition()
         if database is not None:
-            selection = {"am": am, "cm": cm, "vmicro": vmicro}
+            selection = {
+                "am": selected.am,
+                "cm": selected.cm,
+                "vmicro": selected.vmicro,
+            }
             # only a stated pin rides along: a None would occupy the
             # option and turn the database's cross-product sidecar
             # discovery off (grid treats a present key as a pin)
@@ -110,9 +135,9 @@ class BoszSpectra(UnifiedSpectra):
             "bosz",
             _as_path_list(paths),
             wave_path=wave_path,
-            am=am,
-            cm=cm,
-            vmicro=vmicro,
+            am=selected.am,
+            cm=selected.cm,
+            vmicro=selected.vmicro,
         )
         return cls(grid.sets)
 

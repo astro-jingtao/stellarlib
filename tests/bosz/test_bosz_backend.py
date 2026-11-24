@@ -19,7 +19,7 @@ from stellarlib.exceptions import (
     MetadataConflictError,
     WavelengthGridError,
 )
-from stellarlib.facade import BoszSpectra, construct
+from stellarlib.facade import BoszComposition, BoszSpectra, construct
 from stellarlib.grids.grid import open_grid
 from stellarlib.models.bosz.backend import read_bosz
 from stellarlib.spectra.core import ParameterRole
@@ -210,6 +210,33 @@ class TestOpenGrid:
         shutil.copy(DATA / "bosz2024_wave_r500.txt", tmp_path)
         with pytest.raises(ValueError, match="does not match"):
             construct("bosz/2017", paths=tmp_path)
+
+
+class TestCompositionObject:
+    def test_construct_composition_selects_the_mirror_slice(self, tmp_path):
+        # the renegade a+0.25 file joins a solar directory: the mirror
+        # selection is expressed by the BoszComposition parameter object
+        renegade = (
+            tmp_path
+            / "bosz2024_ms_t3500_g+1.0_m+0.00_a+0.25_c+0.00_v2_r500_resam.txt.gz"
+        )
+        shutil.copy(DATA / NODE_NAMES[0], renegade)
+        for name in NODE_NAMES:
+            shutil.copy(DATA / name, tmp_path / name)
+        shutil.copy(DATA / "bosz2024_wave_r500.txt", tmp_path)
+        solar = construct("bosz/2024", paths=tmp_path)
+        assert len(solar) == 8
+        enriched = construct(
+            "bosz/2024", paths=tmp_path, composition=BoszComposition(am=0.25)
+        )
+        assert len(enriched) == 1
+        assert enriched.sets[0].notes["selection"]["am"] == 0.25
+
+    def test_composition_defaults_are_solar_scaled(self):
+        default = BoszComposition()
+        assert default.am == 0.0
+        assert default.cm == 0.0
+        assert default.vmicro is None
 
 
 class TestRealDataInterpolation:

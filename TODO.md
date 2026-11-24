@@ -3,25 +3,6 @@
 Design and feature work deliberately not yet done. Every item names the
 gap and the constraint any solution must respect; none of these are bugs.
 
-## ruff full-compliance pass — remainder is two public-signature designs
-
-- The 2026-11-18 seed left 409 findings; the 2026-11-19 sweeps cleared
-  all but 3 in the code, no rule edits, no `noqa`: the mechanical
-  families (imports, docstrings, annotations, pytest style, redundant
-  constructs) are at zero, and the complexity family's decomposition
-  work is done — the fetch/merge state machines (`_build_product`,
-  `_merge_product`, `_verify_product`, `register_local_product`,
-  `scan_database`, `build_database`), the family readers
-  (`read_bosz`/`read_miles`/`read_stelib`), `corner_weights`, and the
-  registry rendering all extract their phases into module-level
-  helpers now.
-- The 3 findings that remain are one design decision each, not
-  suppression candidates: `empty_manifest` (10 keyword-only args — the
-  arguments ARE the manifest schema) and `BoszSpectra.construct` (9
-  positional of 9 — the arguments ARE the family's option surface).
-  Resolving them means a parameter object, a change to public
-  signatures; decide separately.
-
 ## BOSZ rorig storage and fetch rounds — indefinitely deferred
 
 - The remaining rorig storage decision (~10.7 TB against ~9.4 TB free)
