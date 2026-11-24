@@ -1,12 +1,16 @@
-"""Spectrum, SpectrumSet, and GridNode: the per-node and per-product objects.
+"""Spectrum classes, SpectrumSet, and GridNode: the per-node and per-product objects.
 
-A :class:`Spectrum` is one library node — one published file, one parameter
-point — exposing both the native arrays it was parsed into and the unified
-view mapped onto it. A :class:`GridNode` is the lightweight index entry for
-one node (coordinates, path, facts); a :class:`SpectrumSet` is the nodes of
-one coherent product plus a loader that materializes nodes on demand, so a
-grid of hundreds of gzip files stays cheap until spectra are actually
-asked for.
+The spectrum class family separates how a spectrum was reached:
+a :class:`NodeSpectrum` is one published library node — one file, one
+parameter point — exposing both the native arrays it was parsed into and
+the unified view mapped onto it; an :class:`InterpSpectrum` is one grid
+query's answer, traceable to the exact nodes and weights that produced it
+through its :attr:`~InterpSpectrum.record`. Both share the :class:`Spectrum`
+base, so every layer access (``native``, ``unified``, ``to_table``) reads
+identically. A :class:`GridNode` is the lightweight index entry for one
+node (coordinates, path, facts); a :class:`SpectrumSet` is the nodes of one
+coherent product plus a loader that materializes nodes on demand, so a grid
+of hundreds of gzip files stays cheap until spectra are actually asked for.
 """
 
 from __future__ import annotations
@@ -14,7 +18,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 import dataclasses
 from pathlib import Path
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 from astropy.table import Table
 
@@ -23,7 +27,16 @@ from stellarlib.native import NativeSpectrum
 from stellarlib.provenance import Provenance
 from stellarlib.unified import UnifiedView
 
-__all__ = ["GridNode", "Spectrum", "SpectrumSet"]
+if TYPE_CHECKING:
+    from stellarlib.interp import InterpolationRecord
+
+__all__ = [
+    "GridNode",
+    "InterpSpectrum",
+    "NodeSpectrum",
+    "Spectrum",
+    "SpectrumSet",
+]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -58,13 +71,14 @@ class GridNode:
 
 
 class Spectrum:
-    """One library node: a native spectrum plus its unified view.
+    """Base of the spectrum class family: layers plus metadata.
 
-    Instances are constructed by backends (through the owning set's
-    loader), not directly by users. The ``unified`` accessor and
-    convenience attributes come from the unified machinery
-    (``stellarlib.unified``); this class holds the pieces and the metadata
-    that travels with them.
+    Do not construct this directly: backends construct
+    :class:`NodeSpectrum` (one published node) and the grid query paths
+    construct :class:`InterpSpectrum` (one query's answer). The class of
+    a spectrum states how it was reached — published node or query
+    result — and everything else (the ``native``/``unified`` layers, the
+    identity, parameters, field specs, provenance) is shared behavior.
     """
 
     def __init__(
@@ -78,7 +92,7 @@ class Spectrum:
         selection: Mapping[str, Any] | None = None,
         unified_view: Any = None,
     ) -> None:
-        """Hold one node's layers; built by backends, not by users."""
+        """Hold the layers and metadata; built by backends, not by users."""
         self._native = native
         self.identity = identity
         self.parameters = tuple(parameters)
@@ -88,23 +102,34 @@ class Spectrum:
         self.selection_info: Mapping[str, Any] | None = None
         self._unified_view = unified_view
 
+    def _clone_kwargs(self) -> dict:
+        """Constructor keyword arguments reproducing this spectrum.
+
+        Subclasses append their own state (the interpolation record);
+        derived-product helpers (``resample_wavelengths``, selection
+        annotation) rebuild through this so the class of a derived
+        spectrum matches its source.
+        """
+        return {
+            "native": self._native,
+            "identity": self.identity,
+            "parameters": self.parameters,
+            "field_specs": dict(self.field_specs),
+            "provenance": self.provenance,
+            "selection": dict(self.selection),
+            "unified_view": self._unified_view,
+        }
+
     def with_selection_info(self, info: Mapping[str, Any]) -> Spectrum:
         """A shallow copy carrying grid-selection metadata.
 
         The native spectrum, identity, parameters, and unified view are
         shared with this object (no data is copied); only the selection
         metadata is new, so annotating one selection never contaminates
-        another consumer of the same cached spectrum.
+        another consumer of the same cached spectrum. The clone keeps
+        this spectrum's class.
         """
-        clone = Spectrum(
-            native=self._native,
-            identity=self.identity,
-            parameters=self.parameters,
-            field_specs=dict(self.field_specs),
-            provenance=self.provenance,
-            selection=dict(self.selection),
-            unified_view=self._unified_view,
-        )
+        clone = type(self)(**self._clone_kwargs())
         clone.selection_info = dict(info)
         return clone
 
@@ -205,9 +230,69 @@ class Spectrum:
 
     def __repr__(self) -> str:
         return (
-            f"Spectrum({self.identity.label}, {len(self)} points, "
+            f"{type(self).__name__}({self.identity.label}, {len(self)} points, "
             f"{len(self.parameters)} parameters)"
         )
+
+
+class NodeSpectrum(Spectrum):
+    """One published library node, verbatim.
+
+    This is what a backend's loader materializes and what
+    ``grid.node(...)`` returns: the spectrum exactly as published at one
+    parameter point. It carries no query record because no query
+    transformed it — asking for one is a category error the type system
+    answers (``InterpSpectrum`` is the class that has one).
+    """
+
+
+class InterpSpectrum(Spectrum):
+    """One grid query's answer, traceable to the nodes that produced it.
+
+    Constructed by the grid query paths (``grid.spectrum(...)``), never
+    by backends. ``record`` is the full
+    :class:`~stellarlib.interp.InterpolationRecord` — the method,
+    the corner nodes with their parameter values, the weights, the clamp
+    state — and the ``corner_nodes``/``corner_weights`` properties are
+    its single-query projection: for an exact-node hit or a Voronoi
+    answer they name the one node returned with weight 1.0, for a
+    multilinear answer they name the bracket cell's corners. The
+    underlying data is shared with the node spectra when the answer IS a
+    node (exact hit, Voronoi) and computed when it is not (multilinear).
+    """
+
+    def __init__(self, *args: Any, record: InterpolationRecord, **kwargs: Any) -> None:
+        """Hold the layers plus the interpolation record that produced them."""
+        super().__init__(*args, **kwargs)
+        if record is None:
+            raise ValueError("an InterpSpectrum requires a non-None record")
+        self.record = record
+
+    def _clone_kwargs(self) -> dict:
+        kwargs = super()._clone_kwargs()
+        kwargs["record"] = self.record
+        return kwargs
+
+    @classmethod
+    def from_node(cls, node: Spectrum, record: InterpolationRecord) -> InterpSpectrum:
+        """A query answer that IS one node's data, with the query record.
+
+        The exact-node and Voronoi paths return a published node's
+        spectrum unchanged; this wraps that node's layers in the
+        InterpSpectrum class so the returned type states "this came from
+        a query" while the arrays stay the node's own (no copy).
+        """
+        return cls(**node._clone_kwargs(), record=record)
+
+    @property
+    def corner_nodes(self) -> tuple[Mapping[str, float], ...]:
+        """The nodes this answer was built from, with their coordinates."""
+        return self.record.node_values[0]
+
+    @property
+    def corner_weights(self) -> tuple[float, ...]:
+        """The weight of each corner node (they sum to 1)."""
+        return self.record.weights[0]
 
 
 class SpectrumSet:

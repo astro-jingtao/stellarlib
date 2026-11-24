@@ -66,7 +66,7 @@ from stellarlib.registry import (
     references,
     resolve_parameters,
 )
-from stellarlib.spectrum import GridNode, Spectrum, SpectrumSet
+from stellarlib.spectrum import GridNode, NodeSpectrum, SpectrumSet
 from stellarlib.unified import UnifiedView
 
 __all__ = [
@@ -396,7 +396,7 @@ class _NodeLoader:
             self._cache[key] = parsed
         return parsed
 
-    def __call__(self, node: GridNode) -> Spectrum:
+    def __call__(self, node: GridNode) -> NodeSpectrum:
         parsed = self._parsed(node)
         index = (node.facts["param_line"] - HEADER_LINES) // BLOCK_LINES
         block = parsed.blocks[index]
@@ -422,7 +422,7 @@ class _NodeLoader:
             wavelength_unit="nm",
             flux_unit="erg / (s cm2 Hz sr)",
         )
-        return Spectrum(
+        return NodeSpectrum(
             native=native,
             identity=self._identity,
             parameters=self._parameters,

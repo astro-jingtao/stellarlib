@@ -21,7 +21,12 @@ from stellarlib.exceptions import (
 from stellarlib.facade import UnifiedSpectra
 from stellarlib.native import NativeSpectrum
 from stellarlib.provenance import Provenance
-from stellarlib.spectrum import GridNode, Spectrum, SpectrumSet
+from stellarlib.spectrum import (
+    GridNode,
+    InterpSpectrum,
+    NodeSpectrum,
+    SpectrumSet,
+)
 from stellarlib.unified import UnifiedView
 from stellarlib.warnings import (
     ClampedInterpolationWarning,
@@ -75,7 +80,7 @@ def _loader(node):
         provenance_keys={"file": node.filename},
     )
     identity = ModelIdentity(family="synth", release="1", product="spectra")
-    return Spectrum(
+    return NodeSpectrum(
         native=native,
         identity=identity,
         field_specs=dict(FLUX_SPECS),
@@ -309,6 +314,142 @@ class TestFacadeCornerMechanism:
         np.testing.assert_allclose(spectrum.native.flux[0], _flux_law(3800.0, 1.5, 0.0))
         assert grid.last_record.method == "multilinear"
         assert len(grid.last_record.weights[0]) == 8
+
+
+class TestNodeQueries:
+    """The strict published-node interface: grid.node and grid.nodes."""
+
+    def test_node_returns_the_nodes_spectrum(self):
+        grid = _grid(_full_nodes())
+        spec = grid.node(teff=3750.0, log_surface_gravity=1.5, m_h=0.0)
+        assert isinstance(spec, NodeSpectrum)
+        np.testing.assert_allclose(
+            spec.native.flux[0], _flux_law(3750.0, 1.5, 0.0)
+        )
+
+    def test_node_leaves_no_record(self):
+        grid = _grid(_full_nodes())
+        grid.spectrum(teff=3760.0, log_surface_gravity=1.3, m_h=-0.2)
+        assert grid.last_record is not None
+        grid.node(teff=3750.0, log_surface_gravity=1.5, m_h=0.0)
+        # node() is not a query: the previous record stays untouched and
+        # the returned spectrum carries no record at all
+        assert grid.last_record.method == "multilinear"
+        with pytest.raises(AttributeError):
+            grid.node(teff=3750.0, log_surface_gravity=1.5, m_h=0.0).record  # noqa: B018
+
+    def test_node_refuses_off_node_value(self):
+        grid = _grid(_full_nodes())
+        with pytest.raises(GridPointNotFoundError, match=r"teff.*spectrum"):
+            grid.node(teff=3760.0, log_surface_gravity=1.3, m_h=-0.2)
+
+    def test_node_refuses_hole_combination(self):
+        nodes = [
+            n
+            for n in _full_nodes()
+            if n.coordinates != {"teff": 3750.0, "log_surface_gravity": 1.5, "m_h": 0.0}
+        ]
+        grid = _grid(nodes)
+        with pytest.raises(GridHoleError, match="hole"):
+            grid.node(teff=3750.0, log_surface_gravity=1.5, m_h=0.0)
+
+    def test_node_requires_every_multi_valued_axis(self):
+        grid = _grid(_full_nodes())
+        with pytest.raises(ValueError, match="required"):
+            grid.node(teff=3750.0)
+
+    def test_nodes_lists_every_exact_node(self):
+        grid = _grid(_full_nodes())
+        entries = grid.nodes
+        assert len(entries) == 18
+        assert all(isinstance(n, GridNode) for n in entries)
+        keys = {
+            n.key(("teff", "log_surface_gravity", "m_h")) for n in entries
+        }
+        assert (3750.0, 1.5, 0.0) in keys
+        assert len(keys) == 18
+
+
+class TestSpectrumClassSplit:
+    """spectrum() always answers an InterpSpectrum; node() a NodeSpectrum."""
+
+    def test_exact_hit_is_still_an_interpspectrum(self):
+        grid = _grid(_full_nodes())
+        spec = grid.spectrum(teff=4000.0, log_surface_gravity=2.0, m_h=-0.5)
+        assert isinstance(spec, InterpSpectrum)
+        assert spec.record.method == "exact-node"
+        assert spec.corner_weights == (1.0,)
+        assert spec.corner_nodes == (
+            {"teff": 4000.0, "log_surface_gravity": 2.0, "m_h": -0.5},
+        )
+        # the answer IS the node's data, verbatim
+        node_spec = grid.node(teff=4000.0, log_surface_gravity=2.0, m_h=-0.5)
+        np.testing.assert_array_equal(spec.native.flux, node_spec.native.flux)
+
+    def test_multilinear_answer_traces_to_its_corners(self):
+        grid = _grid(_full_nodes())
+        spec = grid.spectrum(teff=3760.0, log_surface_gravity=1.3, m_h=-0.2)
+        assert isinstance(spec, InterpSpectrum)
+        assert spec.record is grid.last_record
+        assert len(spec.corner_nodes) == 8
+        assert sum(spec.corner_weights) == pytest.approx(1.0)
+        # every corner brackets the query on each axis
+        for corner in spec.corner_nodes:
+            assert 3750.0 <= corner["teff"] <= 4000.0
+            assert 1.0 <= corner["log_surface_gravity"] <= 1.5
+            assert -0.5 <= corner["m_h"] <= 0.0
+        # the weights reproduce the answer from the corner fluxes
+        rows = np.asarray(
+            [
+                _flux_law(c["teff"], c["log_surface_gravity"], c["m_h"])
+                for c in spec.corner_nodes
+            ]
+        )
+        np.testing.assert_allclose(
+            spec.native.flux[0], spec.corner_weights @ rows
+        )
+
+    def test_voronoi_answer_carries_its_record(self):
+        nodes = [
+            n
+            for n in _full_nodes()
+            if n.coordinates
+            not in (
+                {"teff": 3750.0, "log_surface_gravity": 1.5, "m_h": 0.0},
+                {"teff": 3750.0, "log_surface_gravity": 1.5, "m_h": -0.5},
+            )
+        ]
+        grid = _grid(nodes)
+        with pytest.warns(VoronoiInterpolationWarning):
+            spec = grid.spectrum(
+                teff=3760.0, log_surface_gravity=1.4, m_h=-0.25,
+                interp="voronoi",
+            )
+        assert isinstance(spec, InterpSpectrum)
+        assert spec.record.method == "voronoi"
+        assert spec.corner_weights == (1.0,)
+        assert len(spec.corner_nodes) == 1
+
+    def test_get_spectrum_answers_node_spectra(self):
+        grid = _grid(_full_nodes())
+        exact = grid.get_spectrum(teff=3750.0, log_surface_gravity=1.5, m_h=0.0)
+        assert isinstance(exact, NodeSpectrum)
+        with pytest.warns(NearestGridPointWarning):
+            nearest = grid.get_spectrum(
+                method="nearest", teff=3760.0, log_surface_gravity=1.5, m_h=0.0
+            )
+        assert isinstance(nearest, NodeSpectrum)
+
+    def test_selection_annotation_preserves_class(self):
+        grid = _grid(_full_nodes())
+        node_spec = grid.get_spectrum(teff=3750.0, log_surface_gravity=1.5, m_h=0.0)
+        annotated = node_spec.with_selection_info({"extra": True})
+        assert isinstance(annotated, NodeSpectrum)
+        assert annotated.selection_info == {"extra": True}
+        spec = grid.spectrum(teff=3760.0, log_surface_gravity=1.3, m_h=-0.2)
+        re_annotated = spec.with_selection_info({"extra": True})
+        assert isinstance(re_annotated, InterpSpectrum)
+        assert re_annotated.record is spec.record
 
 
 class TestDescribe:

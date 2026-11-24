@@ -326,12 +326,13 @@ def resample_wavelengths(
         metadata=dict(native.metadata),
         provenance_keys=dict(native.provenance_keys),
     )
-    return Spectrum(
+    # the derived spectrum keeps its source's class: a resampled node is
+    # still node data, a resampled query answer still carries its record
+    kwargs = spectrum._clone_kwargs()
+    kwargs.update(
         native=new_native,
-        identity=spectrum.identity,
-        parameters=spectrum.parameters,
-        field_specs=dict(spectrum.field_specs),
         provenance=new_provenance,
         selection=dict(spectrum.selection),
         unified_view=spectrum.unified.with_native(new_native),
     )
+    return type(spectrum)(**kwargs)

@@ -20,8 +20,8 @@ flowchart TB
     subgraph UNIFIED["unified layer (traceable)"]
         UV["UnifiedView<br/>wavelength / wavelength_um /<br/>eddington_flux / surface_flux / continuum<br/>fixed transformation vocabulary"]
     end
-    SP["Spectrum (one node)<br/>+ SpectrumSet (lightweight node index<br/>+ lazy loader)"]
-    GRID["SpectrumGrid / UnifiedSpectra<br/>axes tell the truth; holes reported<br/>exact / nearest selection<br/>multilinear / voronoi queries"]
+    SP["Spectrum base<br/>NodeSpectrum (one published node)<br/>InterpSpectrum (one query's answer<br/>+ record, corner nodes, weights)<br/>+ SpectrumSet (lightweight node index<br/>+ lazy loader)"]
+    GRID["SpectrumGrid (queries live here)<br/>UnifiedSpectra: family facade<br/>axes tell the truth; holes reported<br/>node() strict / spectrum() interpolating<br/>multilinear / voronoi"]
     DB["database<br/>blueprint + two-state scan<br/>whole-package mirroring<br/>register_local_product"]
     MAT["materialize<br/>merged (axes, wavelength) block<br/>sources sidecar + verification"]
     FILES -->|"reader"| NS --> SP --> GRID
@@ -70,13 +70,19 @@ rectangle. `grid.holes` lists the cells of the axis-product that have no
 published node (about 8.5% of MARCS models are unpublished, mostly at
 low log g); holes are reported, never silently filled.
 
-Selection and interpolation are separate decisions:
+Selection and interpolation are separate decisions, and the result
+type states which one you made: `node(...)` answers a `NodeSpectrum`
+(published node, strictly — off-node coordinates raise), `spectrum(...)`
+always answers an `InterpSpectrum` carrying its record, and the legacy
+selection entry points answer the node annotated with selection info.
 
 - **Selection** (`get_spectrum(method=...)`): `exact` fails loudly;
   `nearest` snaps with a warning and a record — as in stellariso.
 - **Point queries** (`spectrum(interp=..., range_policy=...)`):
-  - an exact node hit returns the published spectrum unchanged
-    (`method="exact-node"` — no interpolation happens at all);
+  - an exact node hit returns the published spectrum's data unchanged
+    (`method="exact-node"`, weight 1.0 on the node — no interpolation
+    happens at all, but the answer is still an `InterpSpectrum`, so the
+    type alone never claims "published node" for a query result);
   - `interp="multilinear"` (default) interpolates linearly in every
     axis over the bracket cell's 2^N corners — linear in Teff, log g,
     [M/H], matching the libraries' own axis labeling and the downstream

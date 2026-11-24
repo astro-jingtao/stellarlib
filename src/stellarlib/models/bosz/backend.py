@@ -45,7 +45,7 @@ from stellarlib.registry import (
     references,
     resolve_parameters,
 )
-from stellarlib.spectrum import GridNode, Spectrum, SpectrumSet
+from stellarlib.spectrum import GridNode, NodeSpectrum, SpectrumSet
 from stellarlib.unified import UnifiedView
 
 __all__ = ["BOSZ_REFERENCES", "bosz_identity", "read_bosz", "recognize_bosz"]
@@ -292,7 +292,7 @@ def read_bosz(
         for facts in all_facts
     )
 
-    def loader(node: GridNode) -> Spectrum:
+    def loader(node: GridNode) -> NodeSpectrum:
         native = read_resam(node.path)
         if native.flux.size != wave.size:
             raise WavelengthGridError(
@@ -308,7 +308,7 @@ def read_bosz(
             metadata=dict(native.metadata),
             provenance_keys=dict(native.provenance_keys),
         )
-        return Spectrum(
+        return NodeSpectrum(
             native=paired,
             identity=identity,
             parameters=parameters,

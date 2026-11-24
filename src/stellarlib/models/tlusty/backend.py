@@ -48,7 +48,7 @@ from stellarlib.registry import (
     references,
     resolve_parameters,
 )
-from stellarlib.spectrum import GridNode, Spectrum, SpectrumSet
+from stellarlib.spectrum import GridNode, NodeSpectrum, SpectrumSet
 from stellarlib.unified import UnifiedView
 
 __all__ = ["TLUSTY_REFERENCES", "read_tlusty", "recognize_tlusty", "tlusty_identity"]
@@ -225,9 +225,9 @@ def read_tlusty(
         for f, facts in kind7
     )
 
-    def loader(node: GridNode) -> Spectrum:
+    def loader(node: GridNode) -> NodeSpectrum:
         native = read_vis(node.path)
-        return Spectrum(
+        return NodeSpectrum(
             native=native,
             identity=identity,
             parameters=parameters,
@@ -343,11 +343,11 @@ def _read_tar(tar_path: Path, release: str | None) -> SpectrumSet:
         for name, facts in parsed7
     )
 
-    def loader(node: GridNode) -> Spectrum:
+    def loader(node: GridNode) -> NodeSpectrum:
         with tarfile.open(node.path, "r") as tf:
             payload = tf.extractfile(node.facts["member"]).read()
         native = read_vis_payload(payload, node.facts["member"])
-        return Spectrum(
+        return NodeSpectrum(
             native=native,
             identity=identity,
             parameters=parameters,

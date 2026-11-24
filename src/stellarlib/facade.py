@@ -1,38 +1,29 @@
 """The unified facade: family-specific grid objects and ``construct()``.
 
-``UnifiedSpectra`` is the abstract face of a loaded library product: point
-queries ``spectrum(teff=..., log_surface_gravity=..., m_h=...)`` that
-combine exact-node selection, multilinear interpolation over the bracket
-cell's corners, or Voronoi nearest-node assignment for grids with holes —
-every path leaving an :class:`~stellarlib.interp.InterpolationRecord` on
-``last_record``. ``corner_weights``/``corner_spectrum`` expose the raw
-rectangular mechanism for sparse-matrix consumers. ``construct()`` builds
-the right subclass from local paths or from a built database.
+``UnifiedSpectra`` is the abstract face of a loaded library product: a
+:class:`~stellarlib.grid.SpectrumGrid` whose point queries
+(``spectrum(teff=..., log_surface_gravity=..., m_h=...)``,
+``node(...)``, ``corner_weights``/``corner_spectrum``) come from the grid
+itself — every interpolating path leaving an
+:class:`~stellarlib.interp.InterpolationRecord` on ``last_record`` and on
+the returned
+:class:`~stellarlib.spectrum.InterpSpectrum`. What the subclasses add is
+the family entry point: a ``construct()`` classmethod that loads the
+right product from local paths or from a built database, plus the
+family's own documentation of what the queries mean.
 """
 
 from __future__ import annotations
 
 from abc import ABC
 from collections.abc import Iterable
-import dataclasses
 from pathlib import Path
 from typing import TYPE_CHECKING
-import warnings
-
-import numpy as np
 
 from stellarlib.database.core import open_database
-from stellarlib.exceptions import GridHoleError, UnsafeInterpolationError, UnsupportedModelError
+from stellarlib.exceptions import UnsupportedModelError
 from stellarlib.grid import SpectrumGrid
-from stellarlib.interp import InterpolationRecord, corner_weights, voronoi_nearest
 from stellarlib.models import parse_model_spec
-from stellarlib.native import NativeSpectrum
-from stellarlib.provenance import Provenance
-from stellarlib.spectrum import Spectrum, SpectrumSet
-from stellarlib.warnings import (
-    ClampedInterpolationWarning,
-    VoronoiInterpolationWarning,
-)
 
 if TYPE_CHECKING:
     from stellarlib.database.core import Database
@@ -51,369 +42,14 @@ __all__ = [
 class UnifiedSpectra(SpectrumGrid, ABC):
     """Abstract unified interface over one library's spectral product.
 
-    Concrete subclasses declare ``model_name`` and inherit the generic
-    implementation; the per-family behavior lives in the backend the grid
-    was built from.
+    Concrete subclasses declare ``model_name`` and a ``construct()``
+    entry point; the query machinery (``node``, ``spectrum``,
+    ``corner_weights``, ``describe``, ``last_record``) is the grid's own
+    — see :class:`~stellarlib.grid.SpectrumGrid`. The per-family
+    behavior lives in the backend the grid was built from.
     """
 
     model_name: str = ""
-
-    def __init__(self, sets: Iterable[SpectrumSet]) -> None:
-        """Hold the grid's sets and reset the query record."""
-        super().__init__(sets)
-        self.last_record: InterpolationRecord | None = None
-
-    # -- point queries --------------------------------------------------------
-
-    def spectrum(
-        self,
-        interp: str = "multilinear",
-        range_policy: str = "strict",
-        **coordinates,
-    ) -> Spectrum:
-        """One spectrum at the given grid coordinates.
-
-        Parameters
-        ----------
-        interp
-            ``"multilinear"``: rectangular corner interpolation of the
-            bracket cell (linear in every axis, matching the libraries'
-            own axis labeling). ``"voronoi"``: the nearest published node
-            (step-normalized distance) — the hole-tolerant path; the
-            result is one node's data, flagged by
-            ``VoronoiInterpolationWarning`` and in the record.
-        range_policy
-            ``"strict"``: coordinates outside an axis range raise
-            ``UnsafeInterpolationError`` (no extrapolation).
-            ``"clamp"``: they clamp to the edge cell with
-            ``ClampedInterpolationWarning`` and a record entry.
-        **coordinates
-            One scalar per selectable axis (single-valued axes may be
-            omitted). An exact node hit returns that node's spectrum
-            unchanged (``method="exact-node"``).
-        """
-        requested = self._validated_coordinates(coordinates)
-        axes_names = self._selectable
-
-        # exact node hit: no interpolation at all
-        try_key = tuple(
-            requested.get(name, self.axes[name][0]) for name in axes_names
-        )
-        if try_key in self._node_of_key:
-            record = InterpolationRecord(
-                method="exact-node",
-                axes=axes_names,
-                requested=(dict(zip(axes_names, try_key)),),
-                node_indices=((-1,),),
-                node_values=(
-                    tuple(dict(zip(axes_names, try_key)) for _ in [try_key]),
-                ),
-                weights=((1.0,),),
-                clamped=(dict.fromkeys(axes_names, False),),
-            )
-            self.last_record = record
-            return self.load_node(try_key).with_selection_info(
-                {
-                    "method": "exact-node",
-                    "requested": dict(zip(axes_names, try_key)),
-                    "returned": dict(zip(axes_names, try_key)),
-                }
-            )
-
-        if interp == "voronoi":
-            return self._voronoinate(requested)
-        if interp != "multilinear":
-            raise ValueError(
-                f"interp must be 'multilinear' or 'voronoi', got {interp!r}"
-            )
-        return self._multilinear(requested, range_policy)
-
-    def get_flux(
-        self,
-        field: str = "surface_flux",
-        interp: str = "multilinear",
-        range_policy: str = "strict",
-        **coordinates,
-    ) -> np.ndarray:
-        """Unified flux field at the given coordinates (default F_lambda)."""
-        spectrum = self.spectrum(
-            interp=interp, range_policy=range_policy, **coordinates
-        )
-        return spectrum.unified[field]
-
-    # -- raw corner mechanism --------------------------------------------------
-
-    def corner_weights(self, **queries) -> tuple[np.ndarray, np.ndarray, tuple]:
-        """The rectangular corner mechanism over this grid's axes.
-
-        Returns ``(idx, w, clamped)`` with ``idx``/``w`` of shape
-        ``(n, 2^N)``: flat indices into the C-order ravel of the axis
-        product and multilinear weights (rows sum to 1), plus one boolean
-        clamp mask per axis. Queries whose bracket cell contains a hole
-        raise :class:`GridHoleError` (use ``interp="voronoi"`` there). The
-        indices pair with :meth:`corner_spectrum`.
-        """
-        self._validated_coordinates(
-            dict.fromkeys(queries, 0.0), require_all=False
-        )
-        idx, w, clamped = corner_weights(self.axes, **queries)
-        per_query = np.atleast_1d(np.asarray(next(iter(queries.values())), dtype=float))
-        n = per_query.size
-        for q in range(n):
-            corners = idx[q]
-            missing = [
-                self._coordinates_of_flat(int(flat))
-                for flat in corners
-                if self._coordinates_of_flat(int(flat)) not in self._node_of_key
-            ]
-            if missing:
-                raise GridHoleError(
-                    f"the bracket cell of query {q} contains "
-                    f"{len(missing)} missing node(s) "
-                    f"{[dict(zip(self._selectable, m)) for m in missing]}; "
-                    "rectangular interpolation is impossible there — use "
-                    "interp='voronoi' or select a hole-free grid"
-                )
-        return idx, w, clamped
-
-    def corner_spectrum(self, flat_indices: Iterable[int]) -> np.ndarray:
-        """Flux rows of nodes by flat index into the axis product."""
-        rows = []
-        for flat in flat_indices:
-            key = self._coordinates_of_flat(int(flat))
-            if key not in self._node_of_key:
-                raise GridHoleError(
-                    f"flat index {flat} names the missing node "
-                    f"{dict(zip(self._selectable, key))}"
-                )
-            rows.append(self.load_node(key).native.flux)
-        return np.asarray(rows)
-
-    # -- internals --------------------------------------------------------------
-
-    def _validated_coordinates(
-        self, coordinates: dict, require_all: bool = True
-    ) -> dict:
-        unknown = set(coordinates) - set(self._selectable)
-        if unknown:
-            raise ValueError(
-                f"unknown coordinates {sorted(unknown)}; "
-                f"selectable: {list(self._selectable)}"
-            )
-        filled = {}
-        for name in self._selectable:
-            if name in coordinates:
-                value = coordinates[name]
-                if not np.isscalar(value):
-                    raise ValueError(
-                        f"coordinate {name!r} must be scalar for point "
-                        "queries; use corner_weights for vector queries"
-                    )
-                filled[name] = float(value)
-            elif len(self.axes[name]) == 1:
-                filled[name] = float(self.axes[name][0])
-            elif require_all:
-                raise ValueError(
-                    f"coordinate {name!r} is required (it has several values "
-                    f"in this grid: {self.axes[name]})"
-                )
-        return filled
-
-    def _record(self, **kwargs) -> InterpolationRecord:
-        record = InterpolationRecord(**kwargs)
-        self.last_record = record
-        return record
-
-    def _voronoinate(self, requested: dict) -> Spectrum:
-        axes = self.axes
-        keys = list(self._node_of_key)
-        query = [tuple(requested[name] for name in self._selectable)]
-        indices, distances, scales = voronoi_nearest(
-            {name: axes[name] for name in self._selectable}, keys, query
-        )
-        node_key = keys[int(indices[0])]
-        spectrum = self.load_node(node_key)
-        warnings.warn(
-            f"Voronoi interpolation: returning the nearest published node "
-            f"{dict(zip(self._selectable, node_key))} for request "
-            f"{dict(requested)} (grid-step-normalized distance "
-            f"{float(distances[0]):.3g}); the result is one node's data, "
-            "not an interpolation",
-            VoronoiInterpolationWarning,
-            stacklevel=3,
-        )
-        self._record(
-            method="voronoi",
-            axes=self._selectable,
-            requested=(dict(requested),),
-            node_indices=((int(indices[0]),),),
-            node_values=((dict(zip(self._selectable, node_key)),),),
-            weights=((1.0,),),
-            clamped=(dict.fromkeys(self._selectable, False),),
-            note=(
-                "nearest published node; distances normalized per axis by "
-                f"the median grid step {scales}"
-            ),
-        )
-        return spectrum.with_selection_info(
-            {
-                "method": "voronoi",
-                "requested": dict(requested),
-                "returned": dict(zip(self._selectable, node_key)),
-                "distance_grid_steps": float(distances[0]),
-            }
-        )
-
-    def _multilinear(self, requested: dict, range_policy: str) -> Spectrum:
-        if range_policy not in ("strict", "clamp"):
-            raise ValueError(
-                f"range_policy must be 'strict' or 'clamp', got {range_policy!r}"
-            )
-        axes_arrays = {
-            name: np.asarray(values) for name, values in self.axes.items()
-        }
-        idx, w, clamped = corner_weights(
-            axes_arrays,
-            **{name: requested[name] for name in self._selectable},
-        )
-        any_clamped = {name: bool(mask[0]) for name, mask in zip(self._selectable, clamped)}
-        if any(any_clamped.values()):
-            if range_policy == "strict":
-                bad = {k: v for k, v in requested.items() if any_clamped[k]}
-                ranges = {
-                    k: (axes_arrays[k][0].item(), axes_arrays[k][-1].item())
-                    for k in bad
-                }
-                raise UnsafeInterpolationError(
-                    f"coordinates {bad} fall outside the grid ranges {ranges}; "
-                    "extrapolation is not performed — use "
-                    "range_policy='clamp' to clamp to the edge cell"
-                )
-            warnings.warn(
-                f"coordinates clamped to the grid's edge cell: "
-                f"{ {k: requested[k] for k, v in any_clamped.items() if v} }",
-                ClampedInterpolationWarning,
-                stacklevel=3,
-            )
-
-        corner_keys = [
-            self._coordinates_of_flat(int(flat)) for flat in idx[0]
-        ]
-        missing = [k for k in corner_keys if k not in self._node_of_key]
-        if missing:
-            raise GridHoleError(
-                f"the bracket cell of {dict(requested)} contains missing "
-                f"node(s) {[dict(zip(self._selectable, m)) for m in missing]}; "
-                "rectangular interpolation is impossible there — use "
-                "interp='voronoi' or select a hole-free grid"
-            )
-
-        corners = [self.load_node(k) for k in corner_keys]
-        first = corners[0]
-        wavelength = first.native.wavelength
-        if wavelength is not None:
-            for corner in corners[1:]:
-                other = corner.native.wavelength
-                if other is None or not np.array_equal(wavelength, other):
-                    raise UnsafeInterpolationError(
-                        "corner spectra do not share one wavelength grid; "
-                        "refusing to interpolate across mismatched grids"
-                    )
-        flux_stack = np.asarray([c.native.flux for c in corners])
-        weights = w[0]
-        out_flux = weights @ flux_stack
-        has_continuum = [c.native.continuum is not None for c in corners]
-        if all(has_continuum):
-            cont_stack = np.asarray([c.native.continuum for c in corners])
-            out_continuum = weights @ cont_stack
-        elif any(has_continuum):
-            raise UnsafeInterpolationError(
-                "corner spectra disagree on continuum presence; refusing "
-                "to interpolate"
-            )
-        else:
-            out_continuum = None
-
-        merged = Provenance(
-            data_sources=tuple(
-                dict.fromkeys(
-                    src for c in corners for src in c.provenance.data_sources
-                )
-            ),
-            assets=tuple(
-                dict.fromkeys(
-                    a for c in corners for a in c.provenance.assets
-                )
-            ),
-            source_chains=first.provenance.source_chains,
-            scientific_references=first.provenance.scientific_references,
-            software_references=first.provenance.software_references,
-            transformations=first.provenance.transformations,
-        )
-        node_descriptions = ", ".join(
-            str(dict(zip(self._selectable, k))) for k in corner_keys
-        )
-        transformation = (
-            f"multilinear node interpolation at {dict(requested)} over "
-            f"bracket-cell corners [{node_descriptions}]"
-        )
-        native = NativeSpectrum(
-            wavelength=None if wavelength is None else np.asarray(wavelength),
-            flux=out_flux,
-            continuum=out_continuum,
-            header=(),
-            metadata={
-                "derived": True,
-                "derivation": transformation,
-                "nodes": node_descriptions,
-            },
-            provenance_keys={
-                "source_files": [c.native.provenance_keys.get("file") for c in corners]
-            },
-        )
-        merged = dataclasses.replace(
-            merged, transformations=(*merged.transformations, transformation)
-        )
-        self._record(
-            method="multilinear",
-            axes=self._selectable,
-            requested=(dict(requested),),
-            node_indices=(tuple(int(i) for i in idx[0]),),
-            node_values=(tuple(dict(zip(self._selectable, k)) for k in corner_keys),),
-            weights=(tuple(float(x) for x in weights),),
-            clamped=(any_clamped,),
-            note=f"corners: {node_descriptions}",
-        )
-        return Spectrum(
-            native=native,
-            identity=first.identity,
-            parameters=first.parameters,
-            field_specs=dict(first.field_specs),
-            provenance=merged,
-            selection=dict(requested),
-            unified_view=first.unified.with_native(native),
-        )
-
-    # -- introspection ---------------------------------------------------------
-
-    def describe(self) -> str:
-        """A human-readable summary: identity, axes, holes, cache size."""
-        lines = [
-            f"{type(self).__name__}: {self.identity.label}",
-            f"product: {self.identity.product}",
-            f"nodes: {len(self)}",
-        ]
-        for name, values in self.axes.items():
-            if values:
-                shown = (
-                    values
-                    if len(values) <= 8
-                    else f"{values[0]}..{values[-1]} ({len(values)} values)"
-                )
-                lines.append(f"axis {name}: {shown}")
-        lines.append(f"holes in axis product: {len(self.holes)}")
-        lines.append(f"loaded spectra: {self.load_cache_size()}")
-        return "\n".join(lines)
 
 
 class BoszSpectra(UnifiedSpectra):
@@ -585,30 +221,11 @@ class MilesSpectra(UnifiedSpectra):
     weighted mix of two stars' fluxes is not a spectrum of anything.
     Point queries are therefore nearest-star only — the default
     ``interp="voronoi"`` returns the nearest parameterized star, warned
-    and recorded; ``interp="multilinear"`` is refused outright.
+    and recorded; ``interp="multilinear"`` is refused outright (the
+    family's backend entry carries the refusal).
     """
 
     model_name = "miles"
-
-    def spectrum(
-        self,
-        interp: str = "voronoi",
-        range_policy: str = "strict",
-        **coordinates,
-    ) -> Spectrum:
-        """Nearest-star point query (see the class docstring for why
-        interpolation between observed stars is refused)."""
-        if interp == "multilinear":
-            raise ValueError(
-                "interp='multilinear' is not defined for MILES: the stars "
-                "are an empirical scatter whose spectra carry arbitrary "
-                "per-star normalizations — a weighted mix is not a "
-                "spectrum of anything; use interp='voronoi' (the nearest "
-                "parameterized star)"
-            )
-        return super().spectrum(
-            interp=interp, range_policy=range_policy, **coordinates
-        )
 
     @classmethod
     def construct(
@@ -648,30 +265,11 @@ class StelibSpectra(UnifiedSpectra):
     defined on a common sampling. Point queries are therefore
     nearest-star only — the default ``interp="voronoi"`` returns the
     nearest parameterized star, warned and recorded;
-    ``interp="multilinear"`` is refused outright.
+    ``interp="multilinear"`` is refused outright (the family's backend
+    entry carries the refusal).
     """
 
     model_name = "stelib"
-
-    def spectrum(
-        self,
-        interp: str = "voronoi",
-        range_policy: str = "strict",
-        **coordinates,
-    ) -> Spectrum:
-        """Nearest-star point query (see the class docstring for why
-        interpolation between observed stars is refused)."""
-        if interp == "multilinear":
-            raise ValueError(
-                "interp='multilinear' is not defined for STELIB: the stars "
-                "are an empirical scatter, each on its own wavelength "
-                "grid — a weighted mix is neither an observation of "
-                "anything nor defined on a common sampling; use "
-                "interp='voronoi' (the nearest parameterized star)"
-            )
-        return super().spectrum(
-            interp=interp, range_policy=range_policy, **coordinates
-        )
 
     @classmethod
     def construct(

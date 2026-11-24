@@ -16,12 +16,13 @@ import pytest
 from stellarlib.core import ModelIdentity
 from stellarlib.exceptions import UnsafeInterpolationError
 from stellarlib.interp import (
+    InterpolationRecord,
     corner_weights,
     resample_wavelengths,
     voronoi_nearest,
 )
 from stellarlib.native import NativeSpectrum
-from stellarlib.spectrum import Spectrum
+from stellarlib.spectrum import InterpSpectrum, NodeSpectrum, Spectrum
 from stellarlib.unified import UnifiedView
 
 TEFFS = np.array([3500.0, 3750.0, 4000.0, 4250.0])
@@ -212,11 +213,34 @@ class TestResampleWavelengths:
             continuum=3.0 * wave,
         )
         identity = ModelIdentity(family="t", release="1", product="p")
-        return Spectrum(
+        return NodeSpectrum(
             native=native,
             identity=identity,
             unified_view=UnifiedView(native, {}),
         )
+
+    def test_resample_preserves_the_spectrum_class(self):
+        node_spectrum = self._make_spectrum()
+        out = resample_wavelengths(node_spectrum, [1100.0, 1500.0])
+        assert isinstance(out, NodeSpectrum)
+        record = InterpolationRecord(
+            method="multilinear",
+            axes=("teff",),
+            requested=({"teff": 3760.0},),
+            node_indices=((0,),),
+            node_values=({"teff": 3750.0},),
+            weights=((1.0,),),
+            clamped=({"teff": False},),
+        )
+        interp_spectrum = InterpSpectrum(
+            native=node_spectrum.native,
+            identity=node_spectrum.identity,
+            unified_view=UnifiedView(node_spectrum.native, {}),
+            record=record,
+        )
+        out = resample_wavelengths(interp_spectrum, [1100.0, 1500.0])
+        assert isinstance(out, InterpSpectrum)
+        assert out.record is record
 
     def test_linear_function_reproduced_exactly(self):
         spectrum = self._make_spectrum()

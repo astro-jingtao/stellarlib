@@ -55,7 +55,13 @@ from stellarlib.provenance import (
     SourceClass,
     SourceRecord,
 )
-from stellarlib.spectrum import GridNode, Spectrum, SpectrumSet
+from stellarlib.spectrum import (
+    GridNode,
+    InterpSpectrum,
+    NodeSpectrum,
+    Spectrum,
+    SpectrumSet,
+)
 from stellarlib.unified import TRANSFORMATIONS, UnifiedView
 
 __all__ = [
@@ -67,12 +73,14 @@ __all__ = [
     "ExportResult",
     "FieldSpec",
     "GridNode",
+    "InterpSpectrum",
     "InterpolationRecord",
     "MergeConflict",
     "MergeReport",
     "MilesSpectra",
     "ModelIdentity",
     "NativeSpectrum",
+    "NodeSpectrum",
     "ParameterRole",
     "ParameterSpec",
     "ProductVerification",

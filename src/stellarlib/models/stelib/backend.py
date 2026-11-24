@@ -51,7 +51,7 @@ from stellarlib.registry import (
     references,
     resolve_parameters,
 )
-from stellarlib.spectrum import GridNode, Spectrum, SpectrumSet
+from stellarlib.spectrum import GridNode, NodeSpectrum, SpectrumSet
 from stellarlib.unified import UnifiedView
 
 __all__ = ["STELIB_REFERENCES", "read_stelib", "recognize_stelib", "stelib_identity"]
@@ -244,9 +244,9 @@ def read_stelib(
         for path, row in parameterized
     )
 
-    def loader(node: GridNode) -> Spectrum:
+    def loader(node: GridNode) -> NodeSpectrum:
         native = read_stelib_fits(node.path, node.facts["spectrum_file"])
-        return Spectrum(
+        return NodeSpectrum(
             native=native,
             identity=identity,
             parameters=parameters,

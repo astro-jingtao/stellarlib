@@ -57,7 +57,7 @@ pip install -e .[test]
 
 ## Quick start
 
-stellarlib never silently decides how processed your data is: every spectrum is reached at one of three explicit levels, and this quick start is that walk — open a library, then obtain each level in turn. Two objects carry it: a **grid** is one product's published parameter nodes (what the source published, holes included), and a **spectrum** — `spec` below — is one node's data (or one interpolated point's), reached at any level by explicit code. For a scientific application the difference matters: the native layer is what the authors published, the unified layer is that data under one vocabulary, the interpolated layer is a derived product stellarlib computed for you.
+stellarlib never silently decides how processed your data is: every spectrum is reached at one of three explicit levels, and this quick start is that walk — open a library, then obtain each level in turn. Two objects carry it: a **grid** is one product's published parameter nodes (what the source published, holes included), and a **spectrum** — `spec` below — is one node's data or one interpolated point's, reached at any level by explicit code. The grid offers the choice as two interfaces with two result types: `grid.node(...)` accepts only coordinates that land exactly on a published node and answers a `NodeSpectrum` (the published spectrum, strictly), while `grid.spectrum(...)` interpolates between nodes and always answers an `InterpSpectrum` whose record traces the answer back to the exact nodes and weights — including the degenerate cases, where an exact hit or a nearest-node answer carries weight 1.0 on the single node it returns. For a scientific application the difference matters: the native layer is what the authors published, the unified layer is that data under one vocabulary, the interpolated layer is a derived product stellarlib computed for you.
 
 Open a local directory of BOSZ resampled spectra (the wavelength sidecar is discovered next to them or pinned explicitly):
 
@@ -73,7 +73,7 @@ print(grid.describe())          # axes report what exists; holes are counted
 Every spectrum object carries `spec.native`: the numeric arrays exactly as the upstream file holds them, its verbatim header, and the metadata the filename or header states.
 
 ```python
-spec = grid.spectrum(teff=4000.0, log_surface_gravity=3.0, m_h=0.0)  # an exact node
+spec = grid.node(teff=4000.0, log_surface_gravity=3.0, m_h=0.0)  # a NodeSpectrum
 spec.native.flux             # the flux column, exactly as parsed
 spec.native.wavelength       # or None where the file carries no wavelength column
 spec.to_table(layer="native")  # astropy Table, units = the published convention
@@ -99,20 +99,22 @@ The unified layer still holds **one node's published data** — nothing has been
 
 ### Level 3 — interpolated: a point between nodes, computed on your request
 
-`grid.spectrum(teff=..., log_surface_gravity=..., m_h=...)` answers a query between nodes, and the method is an explicit argument:
+`grid.node(...)` is the strict interface of Level 1; `grid.spectrum(teff=..., log_surface_gravity=..., m_h=...)` is the interpolating counterpart, and the method is an explicit argument:
 
-- an **exact node hit** returns the published spectrum unchanged — no interpolation runs at all (`method="exact-node"` on the record);
-- `interp="multilinear"` (default) is linear in every axis over the bracketing cell's 2^N corner nodes — linear in Teff, log g, [M/H], matching the libraries' own axis labeling. A bracket cell with a missing node raises `GridHoleError` instead of guessing (about 8.5% of the MARCS models behind BOSZ are unpublished, and BaSeL's per-metallicity grids publish different (Teff, log g) node sets, so holes are common there; `grid.holes` lists them);
+- an **exact node hit** returns the published spectrum's data unchanged — no interpolation runs at all (`method="exact-node"` on the record, weight 1.0 on that node);
+- `interp="multilinear"` (the default for model grids) is linear in every axis over the bracketing cell's 2^N corner nodes — linear in Teff, log g, [M/H], matching the libraries' own axis labeling. A bracket cell with a missing node raises `GridHoleError` instead of guessing (about 8.5% of the MARCS models behind BOSZ are unpublished, and BaSeL's per-metallicity grids publish different (Teff, log g) node sets, so holes are common there; `grid.holes` lists them, and `grid.nodes` lists every node that does exist);
 - `interp="voronoi"` returns the single nearest published node, grid-step-normalized, with a warning and a record — the hole-tolerant path that never invents data between nodes;
 - out-of-range coordinates raise (`range_policy="strict"`, no extrapolation) or clamp to the edge cell with a warning (`range_policy="clamp"`).
 
 ```python
 spec = grid.spectrum(teff=4125.0, log_surface_gravity=3.1, m_h=-0.3)
+spec.corner_nodes              # the exact nodes this answer was built from
+spec.corner_weights            # their weights (sum to 1; brackets the query)
 spec = grid.spectrum(teff=4125.0, log_surface_gravity=3.1, m_h=-0.3,
                      interp="voronoi")   # warns + records the node used
 ```
 
-The result is **derived data and says so**: `grid.last_record` carries the full `InterpolationRecord` (method, the exact corner nodes and their parameter values, the weights, the clamp state), and the returned spectrum's provenance names the corner nodes it was built from. The same honesty bounds who may be interpolated at all: empirical libraries (MILES, STELIB) refuse `multilinear` outright — a weighted mix of two arbitrarily-normalized observed stars is not a spectrum of anything — and answer with the nearest parameterized star, warned and recorded.
+The result is **derived data and says so**, in its class and on its body: every `grid.spectrum(...)` call answers an `InterpSpectrum` carrying the full `InterpolationRecord` (method, the exact corner nodes and their parameter values, the weights, the clamp state) as `spec.record` — the same record left on `grid.last_record` — and the spectrum's provenance names the corner nodes it was built from. The same honesty bounds who may be interpolated at all: empirical libraries (MILES, STELIB) refuse `multilinear` outright — a weighted mix of two arbitrarily-normalized observed stars is not a spectrum of anything — and answer with the nearest parameterized star, warned and recorded.
 
 ### Empirical libraries: observed stars, nearest-star answers
 

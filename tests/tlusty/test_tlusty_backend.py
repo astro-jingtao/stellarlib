@@ -28,6 +28,7 @@ from stellarlib.facade import TlustySpectra
 from stellarlib.grid import open_grid
 from stellarlib.models.tlusty.backend import read_tlusty
 from stellarlib.models.tlusty.reader import read_vis_payload
+from stellarlib.spectrum import InterpSpectrum, NodeSpectrum
 from stellarlib.warnings import ClampedInterpolationWarning
 
 DATA = Path(__file__).parent.parent / "data" / "tlusty"
@@ -163,6 +164,22 @@ class TestVispecTar:
 
 
 class TestOpenGrid:
+    def test_open_grid_carries_the_query_interface(self, tmp_path):
+        # the README quick start: open_grid, then describe/node/spectrum
+        # on the returned object (the query machinery is the grid's own)
+        for name in OSTAR_NAMES:
+            shutil.copy(DATA / name, tmp_path / name)
+        grid = open_grid(tmp_path, model="tlusty/OSTAR2002")
+        assert "nodes: 4" in grid.describe()
+        teff = grid.axes["teff"][0]
+        logg = grid.axes["log_surface_gravity"][0]
+        node_spec = grid.node(teff=teff, log_surface_gravity=logg)
+        assert isinstance(node_spec, NodeSpectrum)
+        spec = grid.spectrum(teff=float(teff), log_surface_gravity=float(logg))
+        assert isinstance(spec, InterpSpectrum)
+        assert spec.record.method == "exact-node"
+        assert spec.corner_weights == (1.0,)
+
     def test_open_grid_sniffs_tlusty(self, tmp_path):
         for name in OSTAR_NAMES:
             shutil.copy(DATA / name, tmp_path / name)

@@ -30,20 +30,55 @@ class Backend:
     """One library family's entry in the registry."""
 
     def __init__(
-        self, name: str, recognize: Callable, read: Callable
+        self,
+        name: str,
+        recognize: Callable,
+        read: Callable,
+        empirical: bool = False,
+        empirical_note: str | None = None,
     ) -> None:
-        """Hold one family's sniffer and reader."""
+        """Hold one family's sniffer, reader, and library class.
+
+        ``empirical`` marks a library of observed stars: its spectra
+        carry arbitrary per-star normalizations (and may each sit on
+        their own wavelength grid), so cross-node interpolation is
+        refused at the grid level and point queries default to the
+        nearest-star answer. ``empirical_note`` is the one-clause reason
+        the refusal message quotes (required when ``empirical`` is set).
+        """
         self.name = name
         self.recognize = recognize
         self.read = read
+        self.empirical = empirical
+        self.empirical_note = empirical_note
 
 
 BACKENDS: dict[str, Backend] = {
     "basel": Backend(name="basel", recognize=recognize_basel, read=read_basel),
     "bosz": Backend(name="bosz", recognize=recognize_bosz, read=read_bosz),
     "tlusty": Backend(name="tlusty", recognize=recognize_tlusty, read=read_tlusty),
-    "miles": Backend(name="miles", recognize=recognize_miles, read=read_miles),
-    "stelib": Backend(name="stelib", recognize=recognize_stelib, read=read_stelib),
+    "miles": Backend(
+        name="miles",
+        recognize=recognize_miles,
+        read=read_miles,
+        empirical=True,
+        empirical_note=(
+            "the stars are an empirical scatter whose spectra carry "
+            "arbitrary per-star normalizations — a weighted mix is not a "
+            "spectrum of anything"
+        ),
+    ),
+    "stelib": Backend(
+        name="stelib",
+        recognize=recognize_stelib,
+        read=read_stelib,
+        empirical=True,
+        empirical_note=(
+            "the stars are an empirical scatter, each on its own wavelength "
+            "grid — a weighted mix is neither an observation of anything "
+            "nor defined on a common sampling"
+        ),
+    ),
 }
 
 

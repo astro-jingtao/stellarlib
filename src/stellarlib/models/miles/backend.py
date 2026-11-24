@@ -57,7 +57,7 @@ from stellarlib.registry import (
     references,
     resolve_parameters,
 )
-from stellarlib.spectrum import GridNode, Spectrum, SpectrumSet
+from stellarlib.spectrum import GridNode, NodeSpectrum, SpectrumSet
 from stellarlib.unified import UnifiedView
 
 __all__ = ["MILES_REFERENCES", "miles_identity", "read_miles", "recognize_miles"]
@@ -260,7 +260,7 @@ def read_miles(
         for s, row in parameterized
     )
 
-    def loader(node: GridNode) -> Spectrum:
+    def loader(node: GridNode) -> NodeSpectrum:
         name = f"s{node.facts['s_number']:04d}.fits"
         if "member" in node.facts:
             with tarfile.open(node.path, "r") as tf:
@@ -268,7 +268,7 @@ def read_miles(
             native = read_miles_fits(payload, name)
         else:
             native = read_miles_fits(node.path, name)
-        return Spectrum(
+        return NodeSpectrum(
             native=native,
             identity=identity,
             parameters=parameters,
