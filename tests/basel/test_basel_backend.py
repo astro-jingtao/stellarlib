@@ -10,7 +10,6 @@ from astropy import units as u
 import numpy as np
 import pytest
 
-import stellarlib
 from stellarlib.exceptions import (
     AmbiguousConventionError,
     DataIntegrityError,
@@ -18,6 +17,7 @@ from stellarlib.exceptions import (
     MetadataConflictError,
     UnsafeInterpolationError,
 )
+from stellarlib.facade import BaselSpectra
 from stellarlib.models.basel.backend import read_basel
 from stellarlib.warnings import DataQuirkWarning, VoronoiInterpolationWarning
 
@@ -193,7 +193,7 @@ class TestUnifiedMapping:
 
 class TestGridQueries:
     def _grid(self):
-        return stellarlib.BaselSpectra.construct(
+        return BaselSpectra.construct(
             paths=_fixture_files("wlbc99_p00.cor", "wlbc99_m20.cor"),
             variant="WLBC99",
         )
@@ -237,7 +237,7 @@ class TestGridQueries:
             "\n".join(lines[: HEADER_LINES] + lines[HEADER_LINES + 176 :]) + "\n",
             encoding="utf-8",
         )
-        grid = stellarlib.BaselSpectra.construct(
+        grid = BaselSpectra.construct(
             paths=_fixture_files("wlbc99_p00.cor", holed), variant="WLBC99"
         )
         assert grid.has_holes()

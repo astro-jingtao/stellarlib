@@ -5,6 +5,7 @@ products (real upstream bytes; see tests/data/stelib/README.md)."""
 
 from __future__ import annotations
 
+import importlib
 import json
 from pathlib import Path
 import shutil
@@ -302,9 +303,17 @@ class TestExportVerifyRsync:
         assert str(src) in command
         assert "host:/dst" in command
 
-    def test_public_api_reexports(self):
-        for name in (
-            "merge_database", "export_database", "verify_transfer",
-            "rsync_command", "run_rsync",
+    def test_transfer_api_lives_in_concrete_modules(self):
+        # the package root exports only the whole-library entry verbs;
+        # the transfer verbs stay in their concrete modules, reached by
+        # deep absolute import
+        for module_name, names in (
+            ("stellarlib.database.transfer.export",
+             ("export_database", "verify_transfer",
+              "rsync_command", "run_rsync")),
+            ("stellarlib.database.transfer.merge", ("merge_database",)),
         ):
-            assert hasattr(stellarlib, name)
+            module = importlib.import_module(module_name)
+            for name in names:
+                assert hasattr(module, name), (module_name, name)
+                assert not hasattr(stellarlib, name), name

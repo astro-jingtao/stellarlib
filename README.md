@@ -166,10 +166,11 @@ stellarlib.build_database("my-db", select=["bosz/r20000/*"], workers=8)
 A full-integrity pass re-checks every recorded part against both its recorded size and sha256, and backfills records for present files whose manifest write was lost — it never fetches anything:
 
 ```python
-stellarlib.verify_database("my-db", workers=8)
+from stellarlib.database.build import verify_database
+verify_database("my-db", workers=8)
 ```
 
-Open one mirrored product as a grid. A BOSZ directory interleaves every composition and vmicro variant, so opening it is a selection (defaults: solar-scaled composition, the atmosphere-family vmicro; pin a different slice with `composition=stellarlib.BoszComposition(am=..., cm=..., vmicro=...)` — `am` is [a/M] alpha enhancement, `cm` is [C/M], `vmicro` the microturbulent velocity in km/s):
+Open one mirrored product as a grid. A BOSZ directory interleaves every composition and vmicro variant, so opening it is a selection (defaults: solar-scaled composition, the atmosphere-family vmicro; pin a different slice with `composition=BoszComposition(am=..., cm=..., vmicro=...)` — `from stellarlib.facade import BoszComposition`; `am` is [a/M] alpha enhancement, `cm` is [C/M], `vmicro` the microturbulent velocity in km/s):
 
 ```python
 grid = db.grid("bosz/2024", collection="r500", label="m+0.00")
@@ -180,19 +181,22 @@ miles = db.grid("miles/2011")                   # the whole empirical library
 Files you already hold (an extracted tar, a curated subset) still enter through registration:
 
 ```python
-stellarlib.register_local_product("my-db", "tlusty", "ostar_g",
-                                  files=vis_files, note="extracted vispec tar")
+from stellarlib.database.build import register_local_product
+register_local_product("my-db", "tlusty", "ostar_g",
+                       files=vis_files, note="extracted vispec tar")
 grid = db.grid("tlusty/OSTAR2002", label="ostar_g")
 ```
 
 Move a database (or any subset of it) between machines: export a selection on one side, transport it (rsync or any byte copy — the plan travels with the database), and merge it into the other side. The merge only adds what is missing and records conflicts instead of resolving them; the default no-verify merge invalidates exactly the migrated files' signature-cache entries, so the next `verify_database` re-hashes the migrated portion once — never the whole database:
 
 ```python
-stellarlib.export_database("db-on-a", select=["stelib/library/all"])
-stellarlib.run_rsync("db-on-a", "db-on-a/export/selection", "host:/path/db-on-b")
-r = stellarlib.merge_database("db-on-b-partial-copy", "db-on-b")
+from stellarlib.database.transfer.export import export_database, run_rsync
+from stellarlib.database.transfer.merge import merge_database
+export_database("db-on-a", select=["stelib/library/all"])
+run_rsync("db-on-a", "db-on-a/export/selection", "host:/path/db-on-b")
+r = merge_database("db-on-b-partial-copy", "db-on-b")
 print(r.summary())          # merged / completed / kept / conflicts
-stellarlib.verify_database("db-on-b", select=["stelib/library/all"])  # forced re-hash of the migrated portion
+verify_database("db-on-b", select=["stelib/library/all"])  # forced re-hash of the migrated portion
 ```
 
 ### The raw corner mechanism and materialized blocks

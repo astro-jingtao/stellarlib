@@ -5,6 +5,7 @@ from __future__ import annotations
 from importlib.metadata import version as _dist_version
 
 import stellarlib
+from stellarlib import exceptions
 
 
 def test_version():
@@ -14,13 +15,22 @@ def test_version():
     assert stellarlib.__version__ == _dist_version("stellarlib")
 
 
-def test_all_names_importable():
-    for name in stellarlib.__all__:
-        assert getattr(stellarlib, name) is not None, name
+def test_root_exports_only_the_entry_verbs():
+    # the package root holds exactly the four whole-library entry verbs
+    # plus the version constant; every other public name is imported
+    # from its concrete module so callers see where it lives — any
+    # addition here is an API-surface decision, not a convenience
+    assert stellarlib.__all__ == [
+        "__version__",
+        "build_database",
+        "construct",
+        "open_database",
+        "open_grid",
+    ]
 
 
 def test_error_hierarchy():
-    for name in stellarlib.__all__:
-        obj = getattr(stellarlib, name)
+    for name in exceptions.__all__:
+        obj = getattr(exceptions, name)
         if isinstance(obj, type) and name.endswith("Error"):
-            assert issubclass(obj, stellarlib.StellarLibError), name
+            assert issubclass(obj, exceptions.StellarLibError), name
