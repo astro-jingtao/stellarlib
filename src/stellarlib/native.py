@@ -27,18 +27,24 @@ import numpy as np
 __all__ = ["NativeSpectrum"]
 
 
-def _unit_or_none(unit: str | None) -> u.Unit | None:
-    """The astropy unit for a native-convention string, or ``None``.
+def _as_unit(value: str | u.UnitBase | None, field_name: str) -> u.UnitBase | None:
+    """Normalize a unit declaration to an astropy unit (or ``None``).
 
-    ``None`` leaves the column unitless rather than inventing a unit a
-    format does not state.
+    An astropy unit passes through; a string must parse as a valid
+    astropy unit string — an invalid one raises, because a wrong label
+    is as bad as a wrong number in a provenance-first library (a silent
+    ``None`` would silently drop the statement); ``None`` stays ``None``
+    as the explicit statement that the format declares no unit.
     """
-    if unit is None:
-        return None
+    if value is None or isinstance(value, u.UnitBase):
+        return value
     try:
-        return u.Unit(unit)
-    except ValueError:
-        return None
+        return u.Unit(value)
+    except ValueError as exc:
+        raise ValueError(
+            f"{field_name}={value!r} is not a valid astropy unit string "
+            "(pass an astropy unit, a parsable unit string, or None)"
+        ) from exc
 
 
 @dataclasses.dataclass(frozen=True)
@@ -71,11 +77,15 @@ class NativeSpectrum:
         sidecar filename); the object layer turns these into a provenance
         bundle.
     wavelength_unit, flux_unit
-        The published convention of the two columns, as astropy unit
-        strings — documentation for ``to_table``, never a conversion.
-        The defaults state the common convention (Angstrom;
-        erg / (s cm2 Angstrom)); a family publishing something else (BaSeL:
-        nm; erg / (s cm2 Hz sr)) states its own.
+        The published convention of the two columns, as astropy units —
+        documentation for ``to_table``, never a conversion. Accepted:
+        an astropy unit (``u.Angstrom`` — the defaults are astropy's own
+        ``u.Angstrom`` and ``u.erg / (u.s * u.cm**2 * u.Angstrom)``), a
+        string that parses as one (validated at construction; an
+        invalid string raises — a wrong label is as bad as a wrong
+        number), or ``None`` for the explicit statement that the format
+        declares no unit. A family publishing something else (BaSeL: nm;
+        erg / (s cm2 Hz sr)) states its own.
     """
 
     # unhashable by design: the arrays inside make equality a
@@ -88,13 +98,17 @@ class NativeSpectrum:
     header: tuple[str, ...] = ()
     metadata: Mapping[str, Any] = dataclasses.field(default_factory=dict)
     provenance_keys: Mapping[str, Any] = dataclasses.field(default_factory=dict)
-    wavelength_unit: str = "Angstrom"
-    flux_unit: str = "erg / (s cm2 Angstrom)"
+    wavelength_unit: str | u.UnitBase | None = u.Angstrom
+    flux_unit: str | u.UnitBase | None = u.erg / (u.s * u.cm**2 * u.Angstrom)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "header", tuple(self.header))
         object.__setattr__(self, "metadata", dict(self.metadata))
         object.__setattr__(self, "provenance_keys", dict(self.provenance_keys))
+        object.__setattr__(
+            self, "wavelength_unit", _as_unit(self.wavelength_unit, "wavelength_unit")
+        )
+        object.__setattr__(self, "flux_unit", _as_unit(self.flux_unit, "flux_unit"))
         self._require_1d("flux", self.flux)
         if self.wavelength is not None:
             self._require_1d("wavelength", self.wavelength)
@@ -149,15 +163,14 @@ class NativeSpectrum:
         parsed arrays. ``wavelength_unit``/``flux_unit`` state that
         convention per product (BaSeL publishes wavelength in nm and flux
         per Hz per steradian); families on the common Angstrom/per-
-        Angstrom convention keep the defaults.
+        Angstrom convention keep the astropy-unit defaults. A ``None``
+        unit leaves its column unitless.
         """
-        flux_unit = _unit_or_none(self.flux_unit)
+        flux_unit = self.flux_unit
         columns = []
         names = []
         if self.wavelength is not None:
-            columns.append(
-                Column(self.wavelength, unit=_unit_or_none(self.wavelength_unit))
-            )
+            columns.append(Column(self.wavelength, unit=self.wavelength_unit))
             names.append("wavelength")
         columns.append(Column(self.flux, unit=flux_unit))
         names.append("flux")

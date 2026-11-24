@@ -63,6 +63,44 @@ class TestEquality:
         assert _simple() != _simple(wavelength=None)
 
 
+class TestUnits:
+    def test_defaults_are_astropy_units(self):
+        spec = _simple()
+        assert spec.wavelength_unit == u.Angstrom
+        assert spec.flux_unit == u.erg / (u.s * u.cm**2 * u.Angstrom)
+        assert isinstance(spec.wavelength_unit, u.UnitBase)
+        assert isinstance(spec.flux_unit, u.UnitBase)
+
+    def test_string_normalized_to_unit(self):
+        spec = _simple(wavelength_unit="nm", flux_unit="erg / (s cm2 Hz sr)")
+        assert spec.wavelength_unit == u.nm
+        assert spec.flux_unit == u.erg / (u.s * u.cm**2 * u.Hz * u.sr)
+
+    def test_unit_object_passes_through(self):
+        spec = _simple(wavelength_unit=u.micron, flux_unit=u.Jy)
+        assert spec.wavelength_unit is u.micron
+        assert spec.flux_unit is u.Jy
+
+    def test_invalid_unit_string_raises(self):
+        with pytest.raises(ValueError, match="not a valid astropy unit"):
+            _simple(wavelength_unit="not-a-unit")
+        with pytest.raises(ValueError, match="not a valid astropy unit"):
+            _simple(flux_unit="blorb per second")
+
+    def test_none_leaves_column_unitless(self):
+        spec = _simple(wavelength_unit=None, flux_unit=None)
+        assert spec.wavelength_unit is None
+        assert spec.flux_unit is None
+        table = spec.to_table()
+        assert table["wavelength"].unit is None
+        assert table["flux"].unit is None
+
+    def test_string_and_unit_declarations_agree(self):
+        by_string = _simple(flux_unit="erg / (s cm2 Angstrom)")
+        by_unit = _simple(flux_unit=u.erg / (u.s * u.cm**2 * u.Angstrom))
+        assert by_string.flux_unit == by_unit.flux_unit
+
+
 class TestToTable:
     def test_units_attached(self):
         table = _simple().to_table()
