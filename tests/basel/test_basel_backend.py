@@ -25,6 +25,11 @@ DATA = pathlib.Path(__file__).resolve().parent.parent / "data" / "basel"
 
 _STEFAN_BOLTZMANN = 5.670374419e-5
 
+# np.trapz was renamed np.trapezoid in numpy 2.0 and the old alias expired
+# in numpy 2.3; numpy 1.x has no np.trapezoid. Bind whichever the running
+# numpy provides (the guard keeps np.trapz unevaluated on numpy >= 2.3).
+_TRAPZ = np.trapezoid if hasattr(np, "trapezoid") else np.trapz
+
 
 def _fixture_files(*names):
     return [DATA / n for n in names]
@@ -175,7 +180,7 @@ class TestUnifiedMapping:
             spectrum = s.load(node)
             wave_a = spectrum.unified["wavelength"]
             flux = spectrum.unified["surface_flux"]
-            integral = abs(np.trapz(flux, wave_a))
+            integral = abs(_TRAPZ(flux, wave_a))
             expected = _STEFAN_BOLTZMANN * node.coordinates["teff"] ** 4
             assert integral == pytest.approx(expected, rel=5e-3)
 
