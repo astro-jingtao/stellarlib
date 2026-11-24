@@ -22,17 +22,6 @@ gap and the constraint any solution must respect; none of these are bugs.
   Resolving them means a parameter object, a change to public
   signatures; decide separately.
 
-## Multi-version / multi-platform test CI — not yet started
-
-- Local rounds verify in one env only (the machine's `science` env, python
-  3.9 — the package's floor); dual-env local verification was ruled
-  redundant on 2026-11-19. Multi-version and multi-platform verification
-  belongs to a GitHub Actions matrix when the project publishes there:
-  the floor CPython plus newer ones, Linux plus at least one more
-  platform, running the offline suite (`pytest -m "not network"`) and a
-  lint job. The `network` suite stays an explicit opt-in job — upstream
-  availability flakes must never gate merges.
-
 ## BOSZ rorig storage and fetch rounds — indefinitely deferred
 
 - The remaining rorig storage decision (~10.7 TB against ~9.4 TB free)
