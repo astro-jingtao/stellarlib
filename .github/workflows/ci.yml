@@ -8,6 +8,13 @@
 # but cannot fail. The lint gate is strict: the codebase holds zero open
 # ruff findings (the former parameter-list waivers became BoszComposition
 # and ManifestHeader).
+#
+# The offline job's failure diagnostics are permanent, not scaffolding:
+# pytest writes a junit report and a full log, a dedicated step re-emits
+# every failed test as an error annotation, and both files ride as
+# artifacts. Annotations and artifact metadata stay readable through the
+# API even where job logs are not (no log-download rights), so this trio
+# is the failure observation surface the matrix is debugged through.
 
 name: CI
 
