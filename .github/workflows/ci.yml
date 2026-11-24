@@ -67,18 +67,16 @@ jobs:
           set -o pipefail
           python -u -m pytest 2>&1 | tee pytest_out.log; code=${PIPESTATUS[0]}
           if [ "$code" -ne 0 ]; then
-            # surface the crash site and each failed test as job annotations
-            # — the debugging surface readable through the API without
-            # log-download rights; -u keeps the log current even on a hard
-            # interpreter crash (windows cells died with an empty log)
-            tail -n 10 pytest_out.log | while IFS= read -r line; do
-              echo "##[error]tail| ${line%$'\r'}"
-            done
-            grep "^FAILED\|^ERROR" pytest_out.log | while IFS= read -r line; do
-              echo "##[error]${line%$'\r'}"
-            done
+            # surface the crash site and each failed test as TWO packed job
+            # annotations — the debugging surface readable through the API
+            # without log-download rights; a step emits at most 10
+            # annotations and a batch over the cap is dropped whole, so
+            # the diagnostics ride in two single-line packs
+            T=$(tail -n 30 pytest_out.log | sed -z 's/\r//g; s/\n/ ~~/g')
+            echo "##[error]tail30: ${T:0:3800}"
+            F=$(grep "^FAILED" pytest_out.log | sed -z 's/\r//g; s/\n/ ~~/g')
+            echo "##[error]failed: ${F:0:3800}"
           fi
-          echo "##[notice]pytest-step-exit=$code"
           exit "$code"
       - name: Upload pytest log (diagnostics)
         if: failure()
@@ -100,7 +98,4 @@ jobs:
       - name: Install package with test extras
         run: python -m pip install -e .[test]
       - name: Catalog URL liveness (explicit opt-in)
-        shell: bash
-        run: |
-          echo "##[error]annotation-channel-canary"
-          python -m pytest -m network -o addopts=""
+        run: python -m pytest -m network -o addopts=""
