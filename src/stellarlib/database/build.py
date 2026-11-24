@@ -822,7 +822,6 @@ def _verify_product(
     adapter: FamilyAdapter,
     root: Path,
     *,
-    log: Callable[[str], None],
     cache: SignatureCache,
     workers: int = 1,
 ) -> ProductVerification:
@@ -909,7 +908,7 @@ def verify_database(
         design, adapter = designs[name]
         log(f"verify {name} ({len(design.parts)} designed part(s))")
         verification = _verify_product(
-            design, adapter, root, log=log, cache=cache, workers=workers
+            design, adapter, root, cache=cache, workers=workers
         )
         verifications.append(verification)
         if verification.directory is None:
