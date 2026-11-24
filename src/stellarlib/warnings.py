@@ -10,6 +10,7 @@ __all__ = [
     "CatalogSizeMismatchWarning",
     "ChecksumUnavailableWarning",
     "ClampedInterpolationWarning",
+    "DataQuirkWarning",
     "DerivedQuantityWarning",
     "IncompleteMetadataWarning",
     "NearestGridPointWarning",
@@ -35,6 +36,14 @@ class VoronoiInterpolationWarning(StellarLibWarning):
 class ClampedInterpolationWarning(StellarLibWarning):
     """Out-of-range query coordinates were clamped to the grid's edge cell
     before interpolation (range_policy="clamp")."""
+
+
+class DataQuirkWarning(StellarLibWarning):
+    """A known quirk of the published upstream data was encountered.
+
+    The quirk is recorded faithfully (per node and in the set's notes)
+    and never fixed in code; the warning says it is there and where the
+    verified facts live. Current user: BaSeL 2.2 grids."""
 
 
 class DerivedQuantityWarning(StellarLibWarning):

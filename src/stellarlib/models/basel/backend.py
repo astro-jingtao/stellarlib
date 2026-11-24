@@ -33,6 +33,7 @@ import dataclasses
 import os
 from pathlib import Path
 import tarfile
+import warnings
 
 import numpy as np
 
@@ -68,6 +69,7 @@ from stellarlib.registry import (
 )
 from stellarlib.spectrum import GridNode, NodeSpectrum, SpectrumSet
 from stellarlib.unified import UnifiedView
+from stellarlib.warnings import DataQuirkWarning
 
 __all__ = [
     "BASEL_REFERENCES",
@@ -454,6 +456,19 @@ def read_basel(
             f"{sorted(releases)}"
         )
     release = releases.pop()
+    if release == "2.2":
+        warnings.warn(
+            "BaSeL 2.2 carries known data quirks, recorded and never "
+            "fixed: 29 blocks declare an [Fe/H] column that contradicts "
+            "the metallicity of the file they live in (nodes are labeled "
+            "by their file; the mismatches are listed in the set's notes "
+            "under 'feh_column_mismatches'), and the parameter line's "
+            "last two columns hold values the author's ReadMe calls "
+            "unused (recorded per node). See docs/data-sources.md, the "
+            "BaSeL section, for the verified facts.",
+            DataQuirkWarning,
+            stacklevel=2,
+        )
     variant, cor_sources = _resolve_variant(cor_sources, release, variant)
 
     wavelength: np.ndarray | None = None

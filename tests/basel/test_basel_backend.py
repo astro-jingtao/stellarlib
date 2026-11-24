@@ -4,6 +4,7 @@ mapping, and grid queries over the fixture excerpts."""
 from __future__ import annotations
 
 import pathlib
+import warnings
 
 import numpy as np
 import pytest
@@ -17,7 +18,7 @@ from stellarlib.exceptions import (
     UnsafeInterpolationError,
 )
 from stellarlib.models.basel.backend import read_basel
-from stellarlib.warnings import VoronoiInterpolationWarning
+from stellarlib.warnings import DataQuirkWarning, VoronoiInterpolationWarning
 
 DATA = pathlib.Path(__file__).resolve().parent.parent / "data" / "basel"
 
@@ -105,6 +106,18 @@ class TestTarStreaming:
 
 
 class TestTwo2QuirkRecording:
+    def test_22_warns_about_recorded_quirks_at_set_construction(self):
+        # every path that builds a 2.2 grid goes through read_basel, so
+        # the warning fires at grid initialization (open_grid, construct,
+        # db.grid alike)
+        with pytest.warns(DataQuirkWarning, match="data-sources"):
+            read_basel(_fixture_files("lbc96_p00.cor"))
+
+    def test_31_does_not_warn(self):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DataQuirkWarning)
+            read_basel(_fixture_files("wlbc99_p00.cor"), variant="WLBC99")
+
     def test_feh_mismatch_blocks_recorded_not_fixed(self):
         s = read_basel(_fixture_files("lbc96_p00.cor", "lbc96_p01.cor"))
         assert len(s) == 7

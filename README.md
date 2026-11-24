@@ -128,7 +128,7 @@ flux = spec.unified["observed_flux"]     # relative, unitless
 
 ### BaSeL: the calibration variant is a scientific choice
 
-A BaSeL 3.1 grid additionally states which of the two published calibrations it serves (WLBC99 matches empirical colour-temperature relations; PADOVA2000 trades that for globular-cluster CMDs with Padova 2000 isochrones — no default, the choice is scientific). Its per-metallicity node sets differ, so holes are common and `voronoi` is often the right query. BaSeL 2.2 needs no variant and rejects one; `db.grid("basel/2.2")` serves the whole 19-metallicity library (8,315 nodes, holes reported as everywhere).
+A BaSeL 3.1 grid additionally states which of the two published calibrations it serves (WLBC99 matches empirical colour-temperature relations; PADOVA2000 trades that for globular-cluster CMDs with Padova 2000 isochrones — no default, the choice is scientific). Its per-metallicity node sets differ, so holes are common and `voronoi` is often the right query. BaSeL 2.2 needs no variant and rejects one; `db.grid("basel/2.2")` serves the whole 19-metallicity library (8,315 nodes, holes reported as everywhere). Building a 2.2 grid emits a `DataQuirkWarning` at initialization: 29 of its blocks declare a metallicity that contradicts their file, recorded per node and in the set's notes, never fixed — the message points into `docs/data-sources.md` for the verified facts.
 
 ```python
 db = stellarlib.open_database("my-db")
