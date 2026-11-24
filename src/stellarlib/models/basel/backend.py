@@ -35,6 +35,7 @@ from pathlib import Path
 import tarfile
 import warnings
 
+from astropy import units as u
 import numpy as np
 
 from stellarlib.exceptions import (
@@ -421,8 +422,8 @@ class _NodeLoader:
                 "file": node.facts["file"],
                 "member": node.facts["member"],
             },
-            wavelength_unit="nm",
-            flux_unit="erg / (s cm2 Hz sr)",
+            wavelength_unit=u.nm,
+            flux_unit=u.erg / (u.s * u.cm**2 * u.Hz * u.sr),
         )
         return NodeSpectrum(
             native=native,

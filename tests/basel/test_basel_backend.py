@@ -6,6 +6,7 @@ from __future__ import annotations
 import pathlib
 import warnings
 
+from astropy import units as u
 import numpy as np
 import pytest
 
@@ -180,7 +181,12 @@ class TestUnifiedMapping:
 
     def test_native_units_documented(self):
         s = read_basel(_fixture_files("wlbc99_p00.cor"), variant="WLBC99")
-        table = s.load(s[0]).native.to_table()
+        native = s.load(s[0]).native
+        # the reader states the published convention as astropy units,
+        # not unit strings parsed downstream
+        assert native.wavelength_unit is u.nm
+        assert native.flux_unit == u.erg / (u.s * u.cm**2 * u.Hz * u.sr)
+        table = native.to_table()
         assert table["wavelength"].unit.to_string() == "nm"
         assert "Hz" in table["flux"].unit.to_string()
 
