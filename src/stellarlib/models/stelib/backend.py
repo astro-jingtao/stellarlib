@@ -25,7 +25,6 @@ from collections.abc import Iterable
 import os
 from pathlib import Path
 
-from stellarlib.core import ModelIdentity
 from stellarlib.exceptions import (
     MetadataConflictError,
     UnrecognizedFormatError,
@@ -51,8 +50,9 @@ from stellarlib.registry import (
     references,
     resolve_parameters,
 )
-from stellarlib.spectrum import GridNode, NodeSpectrum, SpectrumSet
-from stellarlib.unified import UnifiedView
+from stellarlib.spectra.core import ModelIdentity
+from stellarlib.spectra.spectrum import GridNode, NodeSpectrum, SpectrumSet
+from stellarlib.spectra.unified import UnifiedView
 
 __all__ = ["STELIB_REFERENCES", "read_stelib", "recognize_stelib", "stelib_identity"]
 

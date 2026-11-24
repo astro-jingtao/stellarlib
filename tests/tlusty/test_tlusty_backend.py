@@ -16,7 +16,6 @@ import tarfile
 import numpy as np
 import pytest
 
-from stellarlib.core import ParameterRole
 from stellarlib.exceptions import (
     AmbiguousConventionError,
     AmbiguousFormatError,
@@ -25,10 +24,11 @@ from stellarlib.exceptions import (
     UnsafeInterpolationError,
 )
 from stellarlib.facade import TlustySpectra
-from stellarlib.grid import open_grid
+from stellarlib.grids.grid import open_grid
 from stellarlib.models.tlusty.backend import read_tlusty
 from stellarlib.models.tlusty.reader import read_vis_payload
-from stellarlib.spectrum import InterpSpectrum, NodeSpectrum
+from stellarlib.spectra.core import ParameterRole
+from stellarlib.spectra.spectrum import InterpSpectrum, NodeSpectrum
 from stellarlib.warnings import ClampedInterpolationWarning
 
 DATA = Path(__file__).parent.parent / "data" / "tlusty"

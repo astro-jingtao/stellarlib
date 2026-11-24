@@ -3,7 +3,7 @@
 The native spectrum preserves exactly what the file contains — numeric
 values as parsed, the comment/header block, and any metadata the backend
 extracted from the filename or header. Nothing is renamed, converted,
-clipped, or filled in. The unified layer (``stellarlib.unified``) is built
+clipped, or filled in. The unified layer (``stellarlib.spectra.unified``) is built
 on top of this, never instead of it.
 
 Unlike an isochrone table, a spectrum is a small number of equal-length

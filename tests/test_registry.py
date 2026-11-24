@@ -8,7 +8,6 @@ import sys
 
 import pytest
 
-from stellarlib.core import FieldOrigin, ParameterRole, ParameterSource
 from stellarlib.provenance import Reference
 from stellarlib.registry import (
     REGISTRY_FILE,
@@ -23,7 +22,8 @@ from stellarlib.registry import (
     resolve_parameters,
     unified_field_names,
 )
-from stellarlib.unified import TRANSFORMATIONS
+from stellarlib.spectra.core import FieldOrigin, ParameterRole, ParameterSource
+from stellarlib.spectra.unified import TRANSFORMATIONS
 
 REPO_ROOT = Path(__file__).parent.parent
 

@@ -12,22 +12,22 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from stellarlib.core import FieldOrigin, FieldSpec, ModelIdentity
 from stellarlib.exceptions import (
     GridHoleError,
     GridPointNotFoundError,
     UnsafeInterpolationError,
 )
 from stellarlib.facade import UnifiedSpectra
-from stellarlib.native import NativeSpectrum
 from stellarlib.provenance import Provenance
-from stellarlib.spectrum import (
+from stellarlib.spectra.core import FieldOrigin, FieldSpec, ModelIdentity
+from stellarlib.spectra.native import NativeSpectrum
+from stellarlib.spectra.spectrum import (
     GridNode,
     InterpSpectrum,
     NodeSpectrum,
     SpectrumSet,
 )
-from stellarlib.unified import UnifiedView
+from stellarlib.spectra.unified import UnifiedView
 from stellarlib.warnings import (
     ClampedInterpolationWarning,
     NearestGridPointWarning,

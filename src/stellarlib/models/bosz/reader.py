@@ -16,7 +16,7 @@ import re
 
 import numpy as np
 
-from stellarlib.native import NativeSpectrum
+from stellarlib.spectra.native import NativeSpectrum
 
 __all__ = [
     "FILENAME_RE",

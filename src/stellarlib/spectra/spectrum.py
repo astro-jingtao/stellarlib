@@ -22,13 +22,13 @@ from typing import TYPE_CHECKING, Any, Callable
 
 from astropy.table import Table
 
-from stellarlib.core import FieldSpec, ModelIdentity, ParameterSpec
-from stellarlib.native import NativeSpectrum
 from stellarlib.provenance import Provenance
-from stellarlib.unified import UnifiedView
+from stellarlib.spectra.core import FieldSpec, ModelIdentity, ParameterSpec
+from stellarlib.spectra.native import NativeSpectrum
+from stellarlib.spectra.unified import UnifiedView
 
 if TYPE_CHECKING:
-    from stellarlib.interp import InterpolationRecord
+    from stellarlib.grids.interp import InterpolationRecord
 
 __all__ = [
     "GridNode",
@@ -251,7 +251,7 @@ class InterpSpectrum(Spectrum):
 
     Constructed by the grid query paths (``grid.spectrum(...)``), never
     by backends. ``record`` is the full
-    :class:`~stellarlib.interp.InterpolationRecord` — the method,
+    :class:`~stellarlib.grids.interp.InterpolationRecord` — the method,
     the corner nodes with their parameter values, the weights, the clamp
     state — and the ``corner_nodes``/``corner_weights`` properties are
     its single-query projection: for an exact-node hit or a Voronoi

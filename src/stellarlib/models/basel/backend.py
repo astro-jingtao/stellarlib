@@ -4,7 +4,7 @@ BaSeL (Lejeune, Cuisinier & Buser 1998; Westera et al. 2002) is a
 semi-empirical library: theoretical SEDs (Kurucz ATLAS9 and others)
 recalibrated onto empirical color-temperature relations, published as
 one ASCII file per metallicity holding every spectrum of that
-metallicity. One :class:`~stellarlib.spectrum.SpectrumSet` holds one
+metallicity. One :class:`~stellarlib.spectra.spectrum.SpectrumSet` holds one
 published version — 2.2 or 3.1 — at one calibration variant (3.1
 publishes two: ``WLBC99`` and ``PADOVA2000``, genuinely different
 recalibrations at the same node sets; the variant is a read-side
@@ -37,7 +37,6 @@ import warnings
 
 import numpy as np
 
-from stellarlib.core import ModelIdentity, ParameterSpec
 from stellarlib.exceptions import (
     AmbiguousConventionError,
     DataIntegrityError,
@@ -53,7 +52,6 @@ from stellarlib.models.basel.reader import (
     parse_filename,
     recognize_basel,
 )
-from stellarlib.native import NativeSpectrum
 from stellarlib.provenance import (
     DataAsset,
     Provenance,
@@ -67,8 +65,10 @@ from stellarlib.registry import (
     references,
     resolve_parameters,
 )
-from stellarlib.spectrum import GridNode, NodeSpectrum, SpectrumSet
-from stellarlib.unified import UnifiedView
+from stellarlib.spectra.core import ModelIdentity, ParameterSpec
+from stellarlib.spectra.native import NativeSpectrum
+from stellarlib.spectra.spectrum import GridNode, NodeSpectrum, SpectrumSet
+from stellarlib.spectra.unified import UnifiedView
 from stellarlib.warnings import DataQuirkWarning
 
 __all__ = [

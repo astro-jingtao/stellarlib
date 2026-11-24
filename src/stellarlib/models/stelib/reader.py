@@ -29,7 +29,7 @@ from typing import Any
 from astropy.io import fits
 import numpy as np
 
-from stellarlib.native import NativeSpectrum
+from stellarlib.spectra.native import NativeSpectrum
 
 __all__ = [
     "COR_SUFFIX_RE",

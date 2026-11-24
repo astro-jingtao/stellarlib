@@ -7,7 +7,7 @@ from astropy.table import Table
 import numpy as np
 import pytest
 
-from stellarlib.native import NativeSpectrum
+from stellarlib.spectra.native import NativeSpectrum
 
 
 def _simple(**overrides) -> NativeSpectrum:

@@ -29,8 +29,8 @@ import numpy as np
 from scipy.spatial import cKDTree
 
 from stellarlib.exceptions import UnsafeInterpolationError
-from stellarlib.native import NativeSpectrum
-from stellarlib.spectrum import Spectrum
+from stellarlib.spectra.native import NativeSpectrum
+from stellarlib.spectra.spectrum import Spectrum
 
 __all__ = [
     "InterpolationRecord",

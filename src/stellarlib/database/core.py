@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from stellarlib.database.manifest import read_manifest
-from stellarlib.grid import SpectrumGrid
+from stellarlib.grids.grid import SpectrumGrid
 from stellarlib.models import parse_model_spec
 
 __all__ = ["Database", "ProductRecord", "open_database"]

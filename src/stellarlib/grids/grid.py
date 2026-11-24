@@ -9,10 +9,10 @@ filled.
 
 Queries split by intent. ``node(...)`` is the strict published-node
 interface: the coordinates must land exactly on a node, and the answer is
-that node's :class:`~stellarlib.spectrum.NodeSpectrum`. ``spectrum(...)``
+that node's :class:`~stellarlib.spectra.spectrum.NodeSpectrum`. ``spectrum(...)``
 is the convenience query interface: it interpolates between nodes (or
 snaps to the nearest one) and always answers an
-:class:`~stellarlib.spectrum.InterpSpectrum` whose record traces the
+:class:`~stellarlib.spectra.spectrum.InterpSpectrum` whose record traces the
 answer back to the exact nodes and weights — including the degenerate
 cases, where an exact-node hit or a Voronoi nearest-node answer carries
 weight 1.0 on the single node it returns.
@@ -37,15 +37,15 @@ from stellarlib.exceptions import (
     UnrecognizedFormatError,
     UnsafeInterpolationError,
 )
-from stellarlib.interp import (
+from stellarlib.grids.interp import (
     InterpolationRecord,
     corner_weights,
     voronoi_nearest,
 )
 from stellarlib.models import BACKENDS, get_backend, parse_model_spec
-from stellarlib.native import NativeSpectrum
 from stellarlib.provenance import Provenance
-from stellarlib.spectrum import (
+from stellarlib.spectra.native import NativeSpectrum
+from stellarlib.spectra.spectrum import (
     GridNode,
     InterpSpectrum,
     NodeSpectrum,
@@ -69,7 +69,7 @@ class SpectrumGrid:
     log_surface_gravity). Node spectra are loaded lazily through the
     owning set's loader and cached on the grid
     (``load_cache_size()``/``clear_cache()``). Point queries leave their
-    :class:`~stellarlib.interp.InterpolationRecord` on ``last_record``.
+    :class:`~stellarlib.grids.interp.InterpolationRecord` on ``last_record``.
     """
 
     def __init__(self, sets: Iterable[SpectrumSet]) -> None:
@@ -272,7 +272,7 @@ class SpectrumGrid:
             the missing axes must be pinned.
 
         The answer is the published node's data — a
-        :class:`~stellarlib.spectrum.NodeSpectrum` when the loader builds
+        :class:`~stellarlib.spectra.spectrum.NodeSpectrum` when the loader builds
         one — annotated with ``selection_info``; unlike ``spectrum()`` this
         never interpolates and leaves ``last_record`` untouched.
         """
@@ -401,10 +401,10 @@ class SpectrumGrid:
         :class:`GridPointNotFoundError` naming the axis; a combination
         whose values all exist but whose node is unpublished raises
         :class:`GridHoleError`. The answer is the node's own spectrum —
-        a :class:`~stellarlib.spectrum.NodeSpectrum` — with no
+        a :class:`~stellarlib.spectra.spectrum.NodeSpectrum` — with no
         interpolation, no record, and no warning; it is the strict
         counterpart of :meth:`spectrum`, which interpolates and always
-        answers an :class:`~stellarlib.spectrum.InterpSpectrum`.
+        answers an :class:`~stellarlib.spectra.spectrum.InterpSpectrum`.
         """
         requested = self._validated_coordinates(coordinates)
         for name in self._selectable:
@@ -460,7 +460,7 @@ class SpectrumGrid:
             omitted).
 
         The answer is always an
-        :class:`~stellarlib.spectrum.InterpSpectrum` — including the
+        :class:`~stellarlib.spectra.spectrum.InterpSpectrum` — including the
         degenerate cases. An exact node hit returns that node's spectrum
         unchanged with ``method="exact-node"`` and weight 1.0 on the
         node (no interpolation runs); a Voronoi answer returns the

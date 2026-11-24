@@ -25,7 +25,7 @@ from typing import Any, BinaryIO
 from astropy.io import fits
 import numpy as np
 
-from stellarlib.native import NativeSpectrum
+from stellarlib.spectra.native import NativeSpectrum
 
 __all__ = [
     "MILES_FITS_RE",

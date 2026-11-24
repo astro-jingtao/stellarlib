@@ -15,14 +15,14 @@ import shutil
 import numpy as np
 import pytest
 
-from stellarlib.core import ParameterRole
 from stellarlib.exceptions import (
     MetadataConflictError,
     WavelengthGridError,
 )
 from stellarlib.facade import BoszSpectra, construct
-from stellarlib.grid import open_grid
+from stellarlib.grids.grid import open_grid
 from stellarlib.models.bosz.backend import read_bosz
+from stellarlib.spectra.core import ParameterRole
 
 DATA = Path(__file__).parent.parent / "data" / "bosz"
 

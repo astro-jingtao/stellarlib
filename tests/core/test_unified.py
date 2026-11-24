@@ -6,10 +6,10 @@ from astropy import units as u
 import numpy as np
 import pytest
 
-from stellarlib.core import FieldOrigin, FieldSpec
 from stellarlib.exceptions import WavelengthGridError
-from stellarlib.native import NativeSpectrum
-from stellarlib.unified import TRANSFORMATIONS, UnifiedView
+from stellarlib.spectra.core import FieldOrigin, FieldSpec
+from stellarlib.spectra.native import NativeSpectrum
+from stellarlib.spectra.unified import TRANSFORMATIONS, UnifiedView
 
 
 def _native(**overrides) -> NativeSpectrum:

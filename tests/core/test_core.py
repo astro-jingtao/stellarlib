@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from stellarlib.core import (
+from stellarlib.spectra.core import (
     FieldOrigin,
     FieldSpec,
     ModelIdentity,

@@ -8,7 +8,6 @@ libraries of observed stars.
 
 __version__ = "0.1.2"
 
-from stellarlib.core import FieldSpec, ModelIdentity, ParameterRole, ParameterSpec
 from stellarlib.database.build import (
     ProductVerification,
     VerifyReport,
@@ -39,14 +38,13 @@ from stellarlib.facade import (
     UnifiedSpectra,
     construct,
 )
-from stellarlib.grid import SpectrumGrid, open_grid
-from stellarlib.interp import (
+from stellarlib.grids.grid import SpectrumGrid, open_grid
+from stellarlib.grids.interp import (
     InterpolationRecord,
     corner_weights,
     resample_wavelengths,
     voronoi_nearest,
 )
-from stellarlib.native import NativeSpectrum
 from stellarlib.provenance import (
     DataAsset,
     Provenance,
@@ -55,14 +53,16 @@ from stellarlib.provenance import (
     SourceClass,
     SourceRecord,
 )
-from stellarlib.spectrum import (
+from stellarlib.spectra.core import FieldSpec, ModelIdentity, ParameterRole, ParameterSpec
+from stellarlib.spectra.native import NativeSpectrum
+from stellarlib.spectra.spectrum import (
     GridNode,
     InterpSpectrum,
     NodeSpectrum,
     Spectrum,
     SpectrumSet,
 )
-from stellarlib.unified import TRANSFORMATIONS, UnifiedView
+from stellarlib.spectra.unified import TRANSFORMATIONS, UnifiedView
 
 __all__ = [
     "TRANSFORMATIONS",

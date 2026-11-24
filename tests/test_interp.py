@@ -13,17 +13,17 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from stellarlib.core import ModelIdentity
 from stellarlib.exceptions import UnsafeInterpolationError
-from stellarlib.interp import (
+from stellarlib.grids.interp import (
     InterpolationRecord,
     corner_weights,
     resample_wavelengths,
     voronoi_nearest,
 )
-from stellarlib.native import NativeSpectrum
-from stellarlib.spectrum import InterpSpectrum, NodeSpectrum, Spectrum
-from stellarlib.unified import UnifiedView
+from stellarlib.spectra.core import ModelIdentity
+from stellarlib.spectra.native import NativeSpectrum
+from stellarlib.spectra.spectrum import InterpSpectrum, NodeSpectrum, Spectrum
+from stellarlib.spectra.unified import UnifiedView
 
 TEFFS = np.array([3500.0, 3750.0, 4000.0, 4250.0])
 LOGGS = np.array([0.0, 0.5, 1.0, 1.5, 2.0])

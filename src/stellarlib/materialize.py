@@ -23,11 +23,11 @@ from typing import Any
 import numpy as np
 
 from stellarlib import __version__
-from stellarlib.core import ModelIdentity
 from stellarlib.exceptions import GridHoleError, WavelengthGridError
-from stellarlib.grid import SpectrumGrid
+from stellarlib.grids.grid import SpectrumGrid
+from stellarlib.grids.interp import corner_weights
 from stellarlib.integrity import sha256_file
-from stellarlib.interp import corner_weights
+from stellarlib.spectra.core import ModelIdentity
 
 __all__ = ["MaterializedGrid", "materialize_grid", "open_materialized"]
 
@@ -48,7 +48,7 @@ def materialize_grid(
     ``<path>.npz`` holds one array per selectable axis (its sorted
     values), ``wavelength``, ``flux`` with shape ``(n_axis0, ..., n_wave)``
     in C order over the axes (the ravel pairs exactly with
-    :func:`stellarlib.interp.corner_weights` flat indices), and
+    :func:`stellarlib.grids.interp.corner_weights` flat indices), and
     ``continuum`` when every node carries one. ``<path>.sources.json``
     records every source file (absolute path, sha256, size), the grid's
     identity, and the transformation statement. Holes refuse; a missing

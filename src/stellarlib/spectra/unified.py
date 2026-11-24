@@ -3,7 +3,7 @@
 The unified view renames a product's arrays to canonical field names and
 computes documented transformations, but it is not a second copy of the
 data: native arrays are referenced, transformed fields are computed on
-demand, and every field carries its :class:`~stellarlib.core.FieldSpec`
+demand, and every field carries its :class:`~stellarlib.spectra.core.FieldSpec`
 describing exactly how it maps back to native data. File-metadata fields
 read per-node constants stated outside the file's columns (for example a
 filename's Teff token).
@@ -20,9 +20,9 @@ from astropy import units as u
 from astropy.table import Table
 import numpy as np
 
-from stellarlib.core import FieldOrigin, FieldSpec
 from stellarlib.exceptions import WavelengthGridError
-from stellarlib.native import NativeSpectrum
+from stellarlib.spectra.core import FieldOrigin, FieldSpec
+from stellarlib.spectra.native import NativeSpectrum
 
 __all__ = ["TRANSFORMATIONS", "UnifiedView"]
 

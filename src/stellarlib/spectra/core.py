@@ -142,7 +142,7 @@ class FieldSpec:
     spec is that trace. ``transformation`` is a human-readable statement of
     any conversion applied (it documents, it does not execute); executable
     transformations are limited to the fixed vocabulary in
-    ``stellarlib.unified.TRANSFORMATIONS``.
+    ``stellarlib.spectra.unified.TRANSFORMATIONS``.
     """
 
     name: str

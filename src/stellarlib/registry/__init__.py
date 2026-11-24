@@ -26,15 +26,15 @@ import json
 from pathlib import Path
 from typing import Any
 
-from stellarlib.core import (
+from stellarlib.provenance import Reference
+from stellarlib.spectra.core import (
     FieldOrigin,
     FieldSpec,
     ParameterRole,
     ParameterSource,
     ParameterSpec,
 )
-from stellarlib.provenance import Reference
-from stellarlib.unified import TRANSFORMATIONS
+from stellarlib.spectra.unified import TRANSFORMATIONS
 
 _REGISTRY_FILE = Path(__file__).with_name("unified_parameters.json")
 _MODELS_DIR = Path(__file__).resolve().parent.parent / "models"

@@ -1,13 +1,13 @@
 """The unified facade: family-specific grid objects and ``construct()``.
 
 ``UnifiedSpectra`` is the abstract face of a loaded library product: a
-:class:`~stellarlib.grid.SpectrumGrid` whose point queries
+:class:`~stellarlib.grids.grid.SpectrumGrid` whose point queries
 (``spectrum(teff=..., log_surface_gravity=..., m_h=...)``,
 ``node(...)``, ``corner_weights``/``corner_spectrum``) come from the grid
 itself — every interpolating path leaving an
-:class:`~stellarlib.interp.InterpolationRecord` on ``last_record`` and on
+:class:`~stellarlib.grids.interp.InterpolationRecord` on ``last_record`` and on
 the returned
-:class:`~stellarlib.spectrum.InterpSpectrum`. What the subclasses add is
+:class:`~stellarlib.spectra.spectrum.InterpSpectrum`. What the subclasses add is
 the family entry point: a ``construct()`` classmethod that loads the
 right product from local paths or from a built database, plus the
 family's own documentation of what the queries mean.
@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING
 
 from stellarlib.database.core import open_database
 from stellarlib.exceptions import UnsupportedModelError
-from stellarlib.grid import SpectrumGrid
+from stellarlib.grids.grid import SpectrumGrid
 from stellarlib.models import parse_model_spec
 
 if TYPE_CHECKING:
@@ -45,7 +45,7 @@ class UnifiedSpectra(SpectrumGrid, ABC):
     Concrete subclasses declare ``model_name`` and a ``construct()``
     entry point; the query machinery (``node``, ``spectrum``,
     ``corner_weights``, ``describe``, ``last_record``) is the grid's own
-    — see :class:`~stellarlib.grid.SpectrumGrid`. The per-family
+    — see :class:`~stellarlib.grids.grid.SpectrumGrid`. The per-family
     behavior lives in the backend the grid was built from.
     """
 
