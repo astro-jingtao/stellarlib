@@ -28,6 +28,7 @@ import sys
 
 from astropy import constants as const
 import numpy as np
+from scipy.integrate import trapezoid
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -68,7 +69,7 @@ def check(directory: str) -> int:
                 f"log-step spread {spread:.2e} [{'ok' if ok_grid else 'FAIL'}]"
             )
         # trapezoid integral of H_lambda
-        integral = float(np.trapezoid(h_lambda, wl))
+        integral = float(trapezoid(h_lambda, wl))
         expected = SIGMA * teff**4 / (4 * np.pi)
         rel = (integral - expected) / expected
         # 4 pi H vs pi B at a mid-optical wavelength
