@@ -44,13 +44,34 @@ __all__ = ["SIGNATURE_CACHE_NAME", "SignatureCache"]
 SIGNATURE_CACHE_NAME = "signature_cache.json"
 
 
+class _PosixRelativeRemapper:
+    """The absolute-to-relative remapper answering POSIX separators.
+
+    Cache keys are platform-independent relative paths (``"a/b/c"`` on
+    every OS): the whole cache layer compares keys against
+    ``"/"``-joined prefixes, and a cache written under one OS must read
+    back under another. ``AbsoluteToRelativeRemapper`` answers in its
+    base's flavor — backslashes under the Windows flavor — so this
+    wrapper normalizes the remapped form. The trade-off (a POSIX
+    filename holding a literal ``\\`` folds to ``/``) matches the
+    normalization ``forget`` and ``forget_prefixes`` already apply.
+    """
+
+    def __init__(self, base: str) -> None:
+        self._inner = AbsoluteToRelativeRemapper(base)
+
+    def remap(self, path: str) -> str:
+        return self._inner.remap(path).replace("\\", "/")
+
+
 class SignatureCache:
     """sha256 answers keyed by quick signature, stored in the database.
 
     The store file is ``<root>/signature_cache.json``; keys are built
-    from paths relative to ``root`` (the root is canonicalized the same
-    way ``file_quick_signature`` canonicalizes files, so every alias of
-    the database produces the same keys). ``writable=False`` serves
+    from paths relative to ``root`` with POSIX separators (the root is
+    canonicalized the same way ``file_quick_signature`` canonicalizes
+    files, so every alias of the database produces the same keys).
+    ``writable=False`` serves
     recorded answers but never records or saves — the read-only mode of
     dry-run planning. Instances are mutated only from the thread that
     owns the scan, build, or verify (worker threads never write; the
@@ -61,7 +82,7 @@ class SignatureCache:
     def __init__(self, root: str | Path, writable: bool = True) -> None:
         """One database's quick-signature cache (a derived accelerator)."""
         self._root = Path(root)
-        self._remapper = AbsoluteToRelativeRemapper(
+        self._remapper = _PosixRelativeRemapper(
             os.path.realpath(str(self._root))
         )
         self._store = SignatureStore(
