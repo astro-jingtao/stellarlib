@@ -78,7 +78,14 @@ jobs:
               echo "##[error]${line%$'\r'}"
             done
           fi
+          echo "##[notice]pytest-step-exit=$code"
           exit "$code"
+      - name: Upload pytest log (diagnostics)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-log-${{ matrix.python-version }}-${{ matrix.os }}
+          path: pytest_out.log
 
   network:
     name: network suite (never gates)
@@ -93,4 +100,7 @@ jobs:
       - name: Install package with test extras
         run: python -m pip install -e .[test]
       - name: Catalog URL liveness (explicit opt-in)
-        run: python -m pytest -m network -o addopts=""
+        shell: bash
+        run: |
+          echo "##[error]annotation-channel-canary"
+          python -m pytest -m network -o addopts=""
