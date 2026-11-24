@@ -65,16 +65,17 @@ jobs:
           PYTHONFAULTHANDLER: "1"
         run: |
           set -o pipefail
-          python -m pytest 2>&1 | tee pytest_out.log; code=${PIPESTATUS[0]}
+          python -u -m pytest 2>&1 | tee pytest_out.log; code=${PIPESTATUS[0]}
           if [ "$code" -ne 0 ]; then
             # surface the crash site and each failed test as job annotations
             # — the debugging surface readable through the API without
-            # log-download rights
-            tail -n 15 pytest_out.log | while IFS= read -r line; do
-              echo "##[error]tail| $line"
+            # log-download rights; -u keeps the log current even on a hard
+            # interpreter crash (windows cells died with an empty log)
+            tail -n 10 pytest_out.log | while IFS= read -r line; do
+              echo "##[error]tail| ${line%$'\r'}"
             done
             grep "^FAILED\|^ERROR" pytest_out.log | while IFS= read -r line; do
-              echo "##[error]$line"
+              echo "##[error]${line%$'\r'}"
             done
           fi
           exit "$code"
