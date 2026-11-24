@@ -36,3 +36,5 @@ README and the `docs/` tree; consult them before editing:
   implementation modules (`models/`, `registry/`) hold their own code.
   Everything else is imported from its concrete module — tests, docs,
   and downstream code all use deep absolute paths.
+- Invoking an autonomous run is itself the user's explicit commit
+  authorization.
