@@ -14,12 +14,15 @@ recorded sha256 stays what parts are judged against, and deleting
 everything and rebuilds it.
 
 Keys are relative to the database root, so moving (or renaming, or
-symlinking) the database within one machine keeps the cache valid.
-There is deliberately no cross-machine invalidation: an
-mtime-preserving copy (``cp -a``, ``scp -p``, ``tar``) leaves the keys
-usable on the new machine while the content went unverified in
-transit, so after migrating a database to another machine, delete
-``signature_cache.json`` to force one full re-verify (a fresh rsync
+symlinking) the database within one machine keeps the cache valid,
+and the POSIX separators make them OS-independent: a cache written
+under one OS reads back under another. There is deliberately no
+cross-machine invalidation beyond that: an mtime-preserving copy
+(``cp -a``, ``scp -p``, ``tar``) leaves the keys usable on the new
+machine while the content went unverified in transit, so after
+migrating a database by hand, delete ``signature_cache.json`` to
+force one full re-verify — ``merge_database`` automates the scoped
+form (it forgets exactly the migrated files' entries; a fresh rsync
 transfer verifies content by checksum anyway).
 """
 

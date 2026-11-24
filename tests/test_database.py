@@ -655,6 +655,42 @@ class TestSignatureCache:
         )
         assert product.state == "complete"
 
+    def test_windows_flavor_remap_answers_posix_keys(self, tmp_path):
+        # the cross-OS key contract: the windows flavor (detected
+        # textually from the base, on any host) must answer the same
+        # "/"-joined relative component the local flavor does, or a
+        # cache written under one OS could never read back under
+        # another
+        windows = sig_mod._PosixRelativeRemapper(r"E:\db")
+        assert windows.remap(r"E:\db\bosz\r500\m+0.00") == "bosz/r500/m+0.00"
+        assert windows.remap(r"E:/db\bosz") == "bosz"  # "/" reads as one too
+        root = tmp_path.resolve()
+        local = sig_mod._PosixRelativeRemapper(str(root))
+        assert local.remap(str(root / "bosz" / "r500")) == "bosz/r500"
+
+    def test_cache_written_under_windows_reads_back_here(
+            self, tmp_path, monkeypatch):
+        # end-to-end read-back: entries keyed through the windows
+        # pipeline (same relative component, same size and mtime as
+        # the local files) hit on this reader with one stat per file
+        self._built_db(tmp_path)
+        windows = sig_mod._PosixRelativeRemapper(r"E:\db")
+        entries = {}
+        for path in sorted(tmp_path.rglob("*")):
+            if not path.is_file() or path.name == "signature_cache.json":
+                continue
+            st = path.stat()
+            win_path = "\\".join((r"E:\db", *path.relative_to(tmp_path).parts))
+            rel = windows.remap(win_path)
+            entries[f"{rel}_{st.st_size}_{st.st_mtime_ns}"] = _sha(path)
+        (tmp_path / "signature_cache.json").write_text(
+            json.dumps(entries), encoding="utf-8"
+        )
+        reads = self._count_reads(monkeypatch)
+        report = scan_database(tmp_path)
+        assert reads["n"] == 0
+        assert self._mirror(report).state == "complete"
+
 
 class TestBuild:
     def test_dry_run_touches_nothing(self, tmp_path, capsys):
