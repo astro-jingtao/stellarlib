@@ -65,25 +65,40 @@ jobs:
           PYTHONFAULTHANDLER: "1"
         run: |
           set -o pipefail
-          python -u -m pytest 2>&1 | tee pytest_out.log; code=${PIPESTATUS[0]}
-          if [ "$code" -ne 0 ]; then
-            # surface the crash site and each failed test as TWO packed job
-            # annotations — the debugging surface readable through the API
-            # without log-download rights; a step emits at most 10
-            # annotations and a batch over the cap is dropped whole, so
-            # the diagnostics ride in two single-line packs
-            T=$(tail -n 30 pytest_out.log | sed -z 's/\r//g; s/\n/ ~~/g')
-            echo "##[error]tail30: ${T:0:3800}"
-            F=$(grep "^FAILED" pytest_out.log | sed -z 's/\r//g; s/\n/ ~~/g')
-            echo "##[error]failed: ${F:0:3800}"
-          fi
+          python -u -m pytest --junitxml=junit.xml 2>&1 | tee pytest_out.log; code=${PIPESTATUS[0]}
           exit "$code"
-      - name: Upload pytest log (diagnostics)
+      - name: Emit failure diagnostics
+        if: failure()
+        shell: bash
+        run: |
+          # a dedicated clean step (no pipelines) — the annotation channel
+          # works from steps like this one; the debugging surface is
+          # readable through the API without log-download rights
+          python - <<'PY'
+          import os
+          import xml.etree.ElementTree as ET
+          if os.path.exists('junit.xml'):
+              t = ET.parse('junit.xml').getroot()
+              for tc in t.iter('testcase'):
+                  f = tc.find('failure')
+                  if f is None:
+                      f = tc.find('error')
+                  if f is not None:
+                      msg = (f.get('message') or '')[:1200].replace('\n', ' ~~~ ')
+                      print(f"##[error]{tc.get('classname')}.{tc.get('name')}: {msg}")
+          PY
+          if [ -f pytest_out.log ]; then
+            T=$(tail -n 25 pytest_out.log | sed -z 's/\r//g; s/\n/ ~~/g')
+            echo "##[error]tail: ${T:0:3800}"
+          fi
+      - name: Upload test logs (diagnostics)
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: pytest-log-${{ matrix.python-version }}-${{ matrix.os }}
-          path: pytest_out.log
+          path: |
+            pytest_out.log
+            junit.xml
 
   network:
     name: network suite (never gates)
